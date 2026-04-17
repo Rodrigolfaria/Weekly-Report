@@ -93,6 +93,13 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
       color: white;
       box-shadow: var(--shadow);
     }}
+    .hero-top {{
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }}
     h1 {{
       margin: 0 0 12px;
       font-size: clamp(28px, 4vw, 42px);
@@ -154,6 +161,53 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
       font-size: 14px;
       color: rgba(255, 255, 255, 0.82);
     }}
+    .theme-toggle-wrap {{
+      display: grid;
+      gap: 10px;
+      min-width: 210px;
+    }}
+    .theme-toggle-row {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }}
+    .theme-toggle-label {{
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.82);
+      font-weight: 700;
+    }}
+    .theme-toggle-state {{
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.88);
+    }}
+    .theme-toggle {{
+      appearance: none;
+      border: 1px solid rgba(255, 255, 255, 0.20);
+      background: rgba(255, 255, 255, 0.14);
+      color: white;
+      border-radius: 999px;
+      padding: 5px;
+      width: 100%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+    }}
+    .theme-toggle-thumb {{
+      width: 50%;
+      min-width: 90px;
+      padding: 10px 12px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.92);
+      color: #102033;
+      font-size: 13px;
+      font-weight: 800;
+      text-align: center;
+      transition: transform 180ms ease, background 180ms ease, color 180ms ease;
+    }}
     .alert {{
       margin-top: 16px;
       padding: 14px 16px;
@@ -173,10 +227,53 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
       padding: 2px 6px;
       border-radius: 8px;
     }}
+    body.theme-corona {{
+      --bg: #0f1015;
+      --panel: #191c24;
+      --text: #f5f5f5;
+      --muted: #a1aab8;
+      --line: #2c2e33;
+      --accent: #0090e7;
+      --shadow: 0 18px 34px rgba(0, 0, 0, 0.28);
+      background:
+        radial-gradient(circle at 0% 0%, rgba(0, 144, 231, 0.16), transparent 22%),
+        radial-gradient(circle at 100% 0%, rgba(0, 210, 91, 0.12), transparent 20%),
+        linear-gradient(180deg, #0a0b0f 0%, #0f1015 100%);
+    }}
+    body.theme-corona .hero,
+    body.theme-corona .section {{
+      background: #191c24;
+      color: #f5f5f5;
+      border-color: #2c2e33;
+      box-shadow: none;
+    }}
+    body.theme-corona .hero {{
+      background: linear-gradient(135deg, #191c24, #111318 58%, #151922);
+    }}
+    body.theme-corona .upload-input,
+    body.theme-corona .theme-toggle {{
+      background: #0f1015;
+      color: #f5f5f5;
+      border-color: #2c2e33;
+    }}
+    body.theme-corona .theme-toggle-thumb {{
+      transform: translateX(100%);
+      background: linear-gradient(135deg, #0090e7, #0069aa);
+      color: white;
+    }}
+    body.theme-corona .upload-button {{
+      background: linear-gradient(135deg, #0090e7, #0069aa);
+      border-color: transparent;
+    }}
+    body.theme-corona code {{
+      background: #0f1015;
+      color: #8fd8ff;
+    }}
     @media (max-width: 720px) {{
       .page {{
         width: min(100vw - 18px, 980px);
       }}
+      .hero-top,
       .upload-row {{
         flex-direction: column;
         align-items: stretch;
@@ -190,9 +287,22 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
 <body>
   <div class="page">
     <section class="hero">
-      <h1>Weekly Report Automation</h1>
-      <p>Upload an .xlsx file and the system generates the dashboard immediately.</p>
-      <p>No uploaded spreadsheet is stored on the server after processing.</p>
+      <div class="hero-top">
+        <div>
+          <h1>Weekly Report Automation</h1>
+          <p>Upload an .xlsx file and the system generates the dashboard immediately.</p>
+          <p>No uploaded spreadsheet is stored on the server after processing.</p>
+        </div>
+        <div class="theme-toggle-wrap">
+          <div class="theme-toggle-row">
+            <span class="theme-toggle-label">Theme</span>
+            <span id="theme-toggle-state" class="theme-toggle-state">Classic</span>
+          </div>
+          <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">
+            <span id="theme-toggle-thumb" class="theme-toggle-thumb">Classic</span>
+          </button>
+        </div>
+      </div>
       <form class="upload-form" method="post" action="/upload" enctype="multipart/form-data">
         <div class="upload-row">
           <input class="upload-input" type="file" name="spreadsheet" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
@@ -210,6 +320,26 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
       <p>3. Close application <code>NO DATA IS STORED</code>.</p>
     </section>
   </div>
+  <script>
+    const THEME_STORAGE_KEY = "weekly-report-theme";
+    const themeToggle = document.getElementById("theme-toggle");
+    const themeToggleState = document.getElementById("theme-toggle-state");
+    const themeToggleThumb = document.getElementById("theme-toggle-thumb");
+
+    function applyTheme(theme) {
+      const resolvedTheme = theme === "corona" ? "corona" : "classic";
+      document.body.classList.toggle("theme-corona", resolvedTheme === "corona");
+      themeToggleState.textContent = resolvedTheme === "corona" ? "Corona" : "Classic";
+      themeToggleThumb.textContent = resolvedTheme === "corona" ? "Corona" : "Classic";
+      localStorage.setItem(THEME_STORAGE_KEY, resolvedTheme);
+    }
+
+    themeToggle.addEventListener("click", () => {
+      applyTheme(document.body.classList.contains("theme-corona") ? "classic" : "corona");
+    });
+
+    applyTheme(localStorage.getItem(THEME_STORAGE_KEY) || "classic");
+  </script>
 </body>
 </html>"""
 
