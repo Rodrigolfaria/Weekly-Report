@@ -135,6 +135,60 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       color: rgba(255, 255, 255, 0.95);
     }
 
+    .theme-toggle-wrap {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .theme-toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .theme-toggle-label {
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.82);
+      font-weight: 700;
+    }
+
+    .theme-toggle-state {
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.88);
+    }
+
+    .theme-toggle {
+      appearance: none;
+      border: 1px solid rgba(255, 255, 255, 0.20);
+      background: rgba(255, 255, 255, 0.14);
+      color: white;
+      border-radius: 999px;
+      padding: 5px;
+      width: 100%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      transition: background 180ms ease, border-color 180ms ease;
+    }
+
+    .theme-toggle-thumb {
+      width: 50%;
+      min-width: 138px;
+      padding: 10px 12px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.92);
+      color: #102033;
+      font-size: 13px;
+      font-weight: 800;
+      text-align: center;
+      transition: transform 180ms ease, background 180ms ease, color 180ms ease;
+    }
+
     .preset-grid,
     .toggle-grid,
     .filter-grid {
@@ -769,6 +823,137 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       flex: 0 0 auto;
     }
 
+    body.theme-corona {
+      --bg: #0f1015;
+      --paper: #191c24;
+      --panel: #191c24;
+      --panel-alt: #0d1118;
+      --ink: #f5f5f5;
+      --muted: #a1aab8;
+      --line: #2c2e33;
+      --accent: #0090e7;
+      --accent-2: #00d25b;
+      --accent-3: #ffab00;
+      --accent-4: #fc424a;
+      --shadow: 0 18px 34px rgba(0, 0, 0, 0.28);
+      --radius: 10px;
+      background:
+        radial-gradient(circle at 0% 0%, rgba(0, 144, 231, 0.16), transparent 22%),
+        radial-gradient(circle at 100% 0%, rgba(0, 210, 91, 0.12), transparent 20%),
+        linear-gradient(180deg, #0a0b0f 0%, #0f1015 100%);
+    }
+
+    body.theme-corona .hero {
+      border-radius: 14px;
+      background: linear-gradient(135deg, #191c24, #111318 58%, #151922);
+      border: 1px solid #2c2e33;
+      box-shadow: 0 18px 30px rgba(0, 0, 0, 0.28);
+    }
+
+    body.theme-corona .hero-side,
+    body.theme-corona .panel,
+    body.theme-corona .card,
+    body.theme-corona .chart,
+    body.theme-corona .report-card,
+    body.theme-corona .metric-pill,
+    body.theme-corona .status-box,
+    body.theme-corona .table-wrap {
+      background: #191c24;
+      border-color: #2c2e33;
+      box-shadow: none;
+      backdrop-filter: none;
+    }
+
+    body.theme-corona .card::after {
+      background: radial-gradient(circle, rgba(0, 144, 231, 0.18), transparent 72%);
+    }
+
+    body.theme-corona .view-tab {
+      border-color: #2c2e33;
+      background: #191c24;
+      color: #d5d9e0;
+      box-shadow: none;
+      border-radius: 8px;
+    }
+
+    body.theme-corona .view-tab.is-active,
+    body.theme-corona .action-btn {
+      background: linear-gradient(135deg, #0090e7, #0069aa);
+      color: white;
+      border-color: transparent;
+      box-shadow: none;
+    }
+
+    body.theme-corona .chip,
+    body.theme-corona .weekly-banner .chip {
+      background: rgba(0, 144, 231, 0.12);
+      border-color: rgba(0, 144, 231, 0.24);
+      color: #8fd8ff;
+    }
+
+    body.theme-corona .weekly-banner {
+      border-radius: 12px;
+      border: 1px solid #2c2e33;
+      background: linear-gradient(135deg, #191c24, #12151b);
+    }
+
+    body.theme-corona .field input,
+    body.theme-corona .field select,
+    body.theme-corona .toggle,
+    body.theme-corona .theme-toggle {
+      background: #0f1015;
+      color: #f5f5f5;
+      border-color: #2c2e33;
+    }
+
+    body.theme-corona .field input::placeholder {
+      color: #7f8896;
+    }
+
+    body.theme-corona .field input:focus,
+    body.theme-corona .field select:focus {
+      outline-color: rgba(0, 144, 231, 0.22);
+      border-color: rgba(0, 144, 231, 0.56);
+    }
+
+    body.theme-corona .theme-toggle-thumb {
+      transform: translateX(100%);
+      background: linear-gradient(135deg, #0090e7, #0069aa);
+      color: white;
+    }
+
+    body.theme-corona th {
+      background: #0f1015;
+      color: #8fd8ff;
+      border-bottom-color: #2c2e33;
+    }
+
+    body.theme-corona td {
+      border-bottom-color: #2c2e33;
+    }
+
+    body.theme-corona tr:nth-child(even) td,
+    body.theme-corona .empty {
+      background: #111318;
+    }
+
+    body.theme-corona .stats-table thead tr:first-child th,
+    body.theme-corona .stats-table thead tr:nth-child(2) th,
+    body.theme-corona .stats-table thead tr:nth-child(3) th {
+      background: #0f1015;
+      color: #d5d9e0;
+    }
+
+    body.theme-corona .bar-track {
+      background: #0f1015;
+    }
+
+    body.theme-corona .eyebrow,
+    body.theme-corona .hero-chip {
+      background: rgba(255, 255, 255, 0.07);
+      border-color: rgba(255, 255, 255, 0.08);
+    }
+
     [hidden] {
       display: none !important;
     }
@@ -965,6 +1150,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           </div>
           <p class="panel-note" style="color: rgba(255,255,255,0.8); margin-top: 14px;">The quick range buttons use the latest date found in the spreadsheet as the reference point, which makes them consistent even for historical datasets.</p>
           <button id="reset-filters" class="ghost-btn" style="width: 100%;">Reset all filters</button>
+          <div class="theme-toggle-wrap">
+            <div class="theme-toggle-row">
+              <span class="theme-toggle-label">Theme</span>
+              <span id="theme-toggle-state" class="theme-toggle-state">Classic</span>
+            </div>
+            <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle dashboard theme">
+              <span id="theme-toggle-thumb" class="theme-toggle-thumb">Classic</span>
+            </button>
+          </div>
         </div>
       </div>
     </section>
@@ -1353,6 +1547,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       granularity: document.getElementById("granularity-filter"),
       search: document.getElementById("search-filter"),
       reset: document.getElementById("reset-filters"),
+      themeToggle: document.getElementById("theme-toggle"),
+      themeToggleState: document.getElementById("theme-toggle-state"),
+      themeToggleThumb: document.getElementById("theme-toggle-thumb"),
       resultsTitle: document.getElementById("results-title"),
       resultsSubtitle: document.getElementById("results-subtitle"),
       activeFilters: document.getElementById("active-filters"),
@@ -1412,6 +1609,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     });
 
     const CATEGORY_ORDER = ["Stuck pipe", "Optimization", "Operational Compliance", "Well Control", "Reporting"];
+    const THEME_STORAGE_KEY = "weekly-report-theme";
+
+    function applyTheme(theme) {
+      const resolvedTheme = theme === "corona" ? "corona" : "classic";
+      document.body.classList.toggle("theme-corona", resolvedTheme === "corona");
+      ui.themeToggleState.textContent = resolvedTheme === "corona" ? "Corona" : "Classic";
+      ui.themeToggleThumb.textContent = resolvedTheme === "corona" ? "Corona" : "Classic";
+      localStorage.setItem(THEME_STORAGE_KEY, resolvedTheme);
+    }
+
+    function toggleTheme() {
+      applyTheme(document.body.classList.contains("theme-corona") ? "classic" : "corona");
+    }
 
     function escapeHtml(value) {
       return String(value ?? "")
@@ -2661,6 +2871,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       ui.search.addEventListener("input", applyFilters);
       ui.reset.addEventListener("click", resetFilters);
+      ui.themeToggle.addEventListener("click", toggleTheme);
       ui.presetButtons.forEach((button) => {
         button.addEventListener("click", () => applyPreset(button.dataset.preset));
       });
@@ -2684,6 +2895,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     function initialize() {
+      applyTheme(localStorage.getItem(THEME_STORAGE_KEY) || "classic");
       populateSelect(ui.week, dashboardData.filters.weeks, "All weeks");
       populateSelect(ui.month, dashboardData.filters.months, "All months");
       populateSelect(ui.rig, dashboardData.filters.rigs, "All rigs");
