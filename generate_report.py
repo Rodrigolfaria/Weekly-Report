@@ -1646,6 +1646,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     function toggleTheme() {
       applyTheme(document.body.classList.contains("theme-corona") ? "classic" : "corona");
+      applyFilters();
+      renderWeeklyReport();
     }
 
     function escapeHtml(value) {
