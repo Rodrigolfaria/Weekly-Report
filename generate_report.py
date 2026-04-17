@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+from io import BytesIO
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -2827,8 +2828,9 @@ def rows_to_dicts(name: str, rows: list[list[str]]) -> SheetData:
     return SheetData(name=name, headers=headers, rows=records)
 
 
-def load_workbook(path: Path) -> list[SheetData]:
-    with ZipFile(path) as workbook:
+def load_workbook(source: Path | bytes | BytesIO) -> list[SheetData]:
+    workbook_source = BytesIO(source) if isinstance(source, bytes) else source
+    with ZipFile(workbook_source) as workbook:
         shared_strings = load_shared_strings(workbook)
         workbook_root = ET.fromstring(workbook.read("xl/workbook.xml"))
         rels_root = ET.fromstring(workbook.read("xl/_rels/workbook.xml.rels"))
@@ -3029,8 +3031,8 @@ def build_html(title: str, source_file: str, generated_at: str, payload: dict[st
     return output
 
 
-def build_report(spreadsheet: Path, output_path: Path) -> None:
-    sheets = load_workbook(spreadsheet)
+def build_report_html(spreadsheet_name: str, spreadsheet_bytes: bytes) -> str:
+    sheets = load_workbook(spreadsheet_bytes)
     sheet_map = {sheet.name: sheet for sheet in sheets}
 
     interventions_source = sheet_map.get("Intervention Log", SheetData("Intervention Log", [], [])).rows
@@ -3041,19 +3043,22 @@ def build_report(spreadsheet: Path, output_path: Path) -> None:
 
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     payload = build_dashboard_payload(
-        spreadsheet_name=spreadsheet.name,
+        spreadsheet_name=spreadsheet_name,
         generated_at=generated_at,
         intervention_rows=intervention_rows,
         cost_avoidance_rows=cost_avoidance_rows,
     )
 
-    html_output = build_html(
-        title=f"Interactive Report - {spreadsheet.name}",
-        source_file=spreadsheet.name,
+    return build_html(
+        title=f"Interactive Report - {spreadsheet_name}",
+        source_file=spreadsheet_name,
         generated_at=generated_at,
         payload=payload,
     )
 
+
+def build_report(spreadsheet: Path, output_path: Path) -> None:
+    html_output = build_report_html(spreadsheet.name, spreadsheet.read_bytes())
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(html_output, encoding="utf-8")
 

@@ -7,7 +7,7 @@ O app agora esta preparado para publicacao sem depender de arquivos `.xlsx` dent
 - o usuario abre o servidor local
 - faz upload do arquivo `.xlsx` pela interface
 - o dashboard e o `Weekly Report` sao gerados automaticamente
-- os arquivos enviados ficam fora da pasta do projeto
+- os arquivos enviados nao ficam salvos no servidor
 
 ## Rodar o app
 
@@ -62,4 +62,5 @@ O servidor ja aceita `HOST` e `PORT` por variavel de ambiente, entao ele funcion
 ## Observacao importante
 
 - o app nao precisa mais que a planilha fique dentro do projeto
+- o arquivo enviado e processado somente em memoria
 - para publicar o repositorio, basta nao incluir arquivos `.xlsx`

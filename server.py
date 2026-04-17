@@ -5,58 +5,16 @@ import argparse
 import html
 import json
 import os
-import re
-import tempfile
-from datetime import datetime
 from email.parser import BytesParser
 from email.policy import default
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.parse import urlparse
 
-from generate_report import build_report
+from generate_report import build_report_html
 
 
-ROOT_DIR = Path(__file__).resolve().parent
-OUTPUT_DIR = ROOT_DIR / "report_output"
-OUTPUT_FILE = OUTPUT_DIR / "report.html"
-UPLOADS_DIR = Path(tempfile.gettempdir()) / "clinica_report_uploads"
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
-
-
-def list_spreadsheets() -> list[Path]:
-    if not UPLOADS_DIR.exists():
-        return []
-    return sorted(
-        [path for path in UPLOADS_DIR.glob("*.xlsx") if not path.name.startswith("~$")],
-        key=lambda path: path.stat().st_mtime,
-        reverse=True,
-    )
-
-
-def resolve_spreadsheet(filename: str | None) -> Path | None:
-    spreadsheets = list_spreadsheets()
-    if not spreadsheets:
-        return None
-    if not filename:
-        return spreadsheets[0]
-    for path in spreadsheets:
-        if path.name == filename:
-            return path
-    return None
-
-
-def sanitize_filename(filename: str) -> str:
-    cleaned = Path(filename).name.strip()
-    stem = re.sub(r"[^A-Za-z0-9._-]+", "-", Path(cleaned).stem).strip("._-")
-    suffix = Path(cleaned).suffix.lower()
-    if suffix != ".xlsx":
-      suffix = ".xlsx"
-    if not stem:
-        stem = "report"
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    return f"{timestamp}-{stem}{suffix}"
 
 
 def parse_uploaded_spreadsheet(headers, body: bytes) -> tuple[str, bytes] | tuple[None, None]:
@@ -84,33 +42,7 @@ def parse_uploaded_spreadsheet(headers, body: bytes) -> tuple[str, bytes] | tupl
     return None, None
 
 
-def save_uploaded_spreadsheet(filename: str, content: bytes) -> Path:
-    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-    output_name = sanitize_filename(filename)
-    output_path = UPLOADS_DIR / output_name
-    output_path.write_bytes(content)
-    return output_path
-
-
-def render_home_page(selected_name: str | None = None, message: str = "", is_error: bool = False) -> str:
-    spreadsheets = list_spreadsheets()
-    cards = []
-    for spreadsheet in spreadsheets[:8]:
-        is_selected = spreadsheet.name == selected_name
-        open_href = "/dashboard?file=" + quote(spreadsheet.name)
-        modified_at = datetime.fromtimestamp(spreadsheet.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
-        cards.append(
-            f"""
-            <a class="file-card{' is-selected' if is_selected else ''}" href="{open_href}">
-              <div class="file-name">{html.escape(spreadsheet.name)}</div>
-              <div class="file-meta">Uploaded at {html.escape(modified_at)}</div>
-            </a>
-            """
-        )
-
-    cards_html = "".join(cards) if cards else '<div class="empty">No spreadsheet uploaded yet. Use the upload area above to generate your first report.</div>'
-    latest_dashboard_href = "/dashboard?file=" + quote(spreadsheets[0].name) if spreadsheets else "#"
-    latest_button_class = "button" if spreadsheets else "button is-disabled"
+def render_home_page(message: str = "", is_error: bool = False) -> str:
     alert_html = ""
     if message:
         alert_html = f'<div class="alert{" is-error" if is_error else ""}">{html.escape(message)}</div>'
@@ -120,7 +52,7 @@ def render_home_page(selected_name: str | None = None, message: str = "", is_err
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Report Automation</title>
+  <title>Weekly Report Automation</title>
   <style>
     :root {{
       --bg: #f3f7fc;
@@ -129,7 +61,6 @@ def render_home_page(selected_name: str | None = None, message: str = "", is_err
       --muted: #5b6b7a;
       --line: #d8e2ef;
       --accent: #1264d6;
-      --accent-dark: #102f6b;
       --shadow: 0 24px 48px rgba(15, 23, 42, 0.10);
       --success: #e8f7ee;
       --danger: #fdecec;
@@ -145,7 +76,7 @@ def render_home_page(selected_name: str | None = None, message: str = "", is_err
         linear-gradient(180deg, #eef4fb 0%, var(--bg) 24%, var(--bg) 100%);
     }}
     .page {{
-      width: min(1100px, calc(100vw - 28px));
+      width: min(980px, calc(100vw - 28px));
       margin: 0 auto;
       padding: 28px 0 40px;
     }}
@@ -178,36 +109,6 @@ def render_home_page(selected_name: str | None = None, message: str = "", is_err
       border: 1px solid rgba(216, 226, 239, 0.92);
       box-shadow: var(--shadow);
     }}
-    .actions {{
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin-top: 18px;
-    }}
-    .button,
-    .upload-button {{
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 12px 16px;
-      border-radius: 14px;
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      background: rgba(255, 255, 255, 0.14);
-      color: white;
-      text-decoration: none;
-      font-weight: 700;
-      font: inherit;
-      cursor: pointer;
-    }}
-    .button.secondary {{
-      background: white;
-      color: var(--accent);
-      border-color: #bfdbfe;
-    }}
-    .button.is-disabled {{
-      pointer-events: none;
-      opacity: 0.55;
-    }}
     .upload-form {{
       display: grid;
       gap: 14px;
@@ -229,46 +130,23 @@ def render_home_page(selected_name: str | None = None, message: str = "", is_err
       color: white;
       font: inherit;
     }}
+    .upload-button {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px 16px;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.14);
+      color: white;
+      text-decoration: none;
+      font-weight: 700;
+      font: inherit;
+      cursor: pointer;
+    }}
     .upload-help {{
       font-size: 14px;
       color: rgba(255, 255, 255, 0.82);
-    }}
-    .grid {{
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 16px;
-      margin-top: 18px;
-    }}
-    .file-card {{
-      display: block;
-      padding: 18px;
-      border-radius: 20px;
-      background: linear-gradient(180deg, #ffffff, #f8fbff);
-      border: 1px solid var(--line);
-      color: inherit;
-      text-decoration: none;
-      transition: transform 140ms ease, border-color 140ms ease;
-    }}
-    .file-card:hover,
-    .file-card.is-selected {{
-      transform: translateY(-1px);
-      border-color: #8bb5f8;
-    }}
-    .file-name {{
-      font-weight: 700;
-      margin-bottom: 8px;
-      word-break: break-word;
-    }}
-    .file-meta {{
-      color: var(--muted);
-      font-size: 14px;
-    }}
-    .empty {{
-      padding: 18px;
-      border-radius: 18px;
-      border: 1px dashed var(--line);
-      color: var(--muted);
-      background: #fbfdff;
     }}
     .alert {{
       margin-top: 16px;
@@ -291,14 +169,13 @@ def render_home_page(selected_name: str | None = None, message: str = "", is_err
     }}
     @media (max-width: 720px) {{
       .page {{
-        width: min(100vw - 18px, 1100px);
+        width: min(100vw - 18px, 980px);
       }}
       .upload-row {{
         flex-direction: column;
         align-items: stretch;
       }}
-      .upload-button,
-      .button {{
+      .upload-button {{
         width: 100%;
       }}
     }}
@@ -307,34 +184,24 @@ def render_home_page(selected_name: str | None = None, message: str = "", is_err
 <body>
   <div class="page">
     <section class="hero">
-      <h1>Report Automation</h1>
-      <p>This version is ready for publishing because the application no longer depends on Excel files living inside the project folder.</p>
-      <p>Upload an <code>.xlsx</code> file, generate the dashboard, and open the full interactive report directly in the browser.</p>
+      <h1>Weekly Report Automation</h1>
+      <p>Upload an <code>.xlsx</code> file and the system generates the dashboard immediately.</p>
+      <p>No uploaded spreadsheet is stored on the server after processing.</p>
       <form class="upload-form" method="post" action="/upload" enctype="multipart/form-data">
         <div class="upload-row">
           <input class="upload-input" type="file" name="spreadsheet" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
           <button class="upload-button" type="submit">Upload And Open Report</button>
         </div>
-        <div class="upload-help">Uploaded spreadsheets are stored outside the project folder, so your published code stays clean.</div>
+        <div class="upload-help">The file is processed in memory only, so no Excel data is kept on the server.</div>
       </form>
       {alert_html}
-      <div class="actions">
-        <a class="{latest_button_class}" href="{latest_dashboard_href}">Open latest uploaded report</a>
-        <a class="button secondary" href="/api/files">View uploaded files</a>
-      </div>
-    </section>
-
-    <section class="section">
-      <h2>Recent uploads</h2>
-      <p>Each upload generates the same interactive dashboard without keeping the Excel workbook inside the project repository.</p>
-      <div class="grid">{cards_html}</div>
     </section>
 
     <section class="section">
       <h2>How to use</h2>
       <p>1. Start the server with <code>python3 server.py</code>.</p>
       <p>2. Open <code>http://127.0.0.1:8000</code> in the browser.</p>
-      <p>3. Upload an <code>.xlsx</code> file and the app will generate the dashboard automatically.</p>
+      <p>3. Upload an <code>.xlsx</code> file and the report will open directly.</p>
     </section>
   </div>
 </body>
@@ -342,7 +209,7 @@ def render_home_page(selected_name: str | None = None, message: str = "", is_err
 
 
 class ReportHandler(BaseHTTPRequestHandler):
-    server_version = "LocalReportServer/2.0"
+    server_version = "LocalReportServer/3.0"
 
     def _send_text(self, status: int, body: str, content_type: str = "text/html; charset=utf-8") -> None:
         encoded = body.encode("utf-8")
@@ -356,55 +223,15 @@ class ReportHandler(BaseHTTPRequestHandler):
     def _send_json(self, payload: object, status: int = HTTPStatus.OK) -> None:
         self._send_text(status, json.dumps(payload, ensure_ascii=False, indent=2), "application/json; charset=utf-8")
 
-    def _redirect(self, location: str) -> None:
-        self.send_response(HTTPStatus.SEE_OTHER)
-        self.send_header("Location", location)
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
-        query = parse_qs(parsed.query)
 
         if parsed.path == "/":
-            selected = query.get("file", [None])[0]
-            message = query.get("message", [""])[0]
-            is_error = query.get("error", ["0"])[0] == "1"
-            self._send_text(HTTPStatus.OK, render_home_page(selected, message, is_error))
-            return
-
-        if parsed.path == "/api/files":
-            files = list_spreadsheets()
-            self._send_json(
-                {
-                    "files": [path.name for path in files],
-                    "default": files[0].name if files else None,
-                    "storage": str(UPLOADS_DIR),
-                }
-            )
+            self._send_text(HTTPStatus.OK, render_home_page())
             return
 
         if parsed.path == "/health":
             self._send_json({"status": "ok"})
-            return
-
-        if parsed.path == "/dashboard":
-            selected_name = query.get("file", [None])[0]
-            spreadsheet = resolve_spreadsheet(selected_name)
-            if spreadsheet is None:
-                self._send_text(
-                    HTTPStatus.NOT_FOUND,
-                    render_home_page(
-                        selected_name,
-                        "Upload a spreadsheet first to generate the report.",
-                        True,
-                    ),
-                )
-                return
-
-            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-            build_report(spreadsheet, OUTPUT_FILE)
-            self._send_text(HTTPStatus.OK, OUTPUT_FILE.read_text(encoding="utf-8"))
             return
 
         self._send_text(HTTPStatus.NOT_FOUND, "<h1>404</h1><p>Page not found.</p>")
@@ -422,13 +249,13 @@ class ReportHandler(BaseHTTPRequestHandler):
             content_length = 0
 
         if content_length <= 0:
-            self._send_text(HTTPStatus.BAD_REQUEST, render_home_page(message="No file was sent.", is_error=True))
+            self._send_text(HTTPStatus.BAD_REQUEST, render_home_page("No file was sent.", True))
             return
 
         if content_length > MAX_UPLOAD_BYTES:
             self._send_text(
                 HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
-                render_home_page(message="The uploaded file is too large. Please keep it under 25 MB.", is_error=True),
+                render_home_page("The uploaded file is too large. Please keep it under 25 MB.", True),
             )
             return
 
@@ -438,29 +265,27 @@ class ReportHandler(BaseHTTPRequestHandler):
         if not filename or not payload:
             self._send_text(
                 HTTPStatus.BAD_REQUEST,
-                render_home_page(message="Please choose a valid .xlsx file before uploading.", is_error=True),
+                render_home_page("Please choose a valid .xlsx file before uploading.", True),
             )
             return
 
-        if Path(filename).suffix.lower() != ".xlsx":
+        if not filename.lower().endswith(".xlsx"):
             self._send_text(
                 HTTPStatus.BAD_REQUEST,
-                render_home_page(message="Only .xlsx files are supported.", is_error=True),
+                render_home_page("Only .xlsx files are supported.", True),
             )
             return
 
         try:
-            saved_file = save_uploaded_spreadsheet(filename, payload)
-            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-            build_report(saved_file, OUTPUT_FILE)
+            html_report = build_report_html(filename, payload)
         except Exception as exc:  # noqa: BLE001
             self._send_text(
                 HTTPStatus.INTERNAL_SERVER_ERROR,
-                render_home_page(message=f"Could not process the spreadsheet: {exc}", is_error=True),
+                render_home_page(f"Could not process the spreadsheet: {exc}", True),
             )
             return
 
-        self._redirect("/dashboard?file=" + quote(saved_file.name))
+        self._send_text(HTTPStatus.OK, html_report)
 
 
 def parse_args() -> argparse.Namespace:
@@ -480,11 +305,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
-    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     args = parse_args()
     server = ThreadingHTTPServer((args.host, args.port), ReportHandler)
     print(f"Local report server running at http://{args.host}:{args.port}")
-    print(f"Uploaded spreadsheets are stored at {UPLOADS_DIR}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
