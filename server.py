@@ -326,17 +326,17 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
     const themeToggleState = document.getElementById("theme-toggle-state");
     const themeToggleThumb = document.getElementById("theme-toggle-thumb");
 
-    function applyTheme(theme) {
+    function applyTheme(theme) {{
       const resolvedTheme = theme === "corona" ? "corona" : "classic";
       document.body.classList.toggle("theme-corona", resolvedTheme === "corona");
       themeToggleState.textContent = resolvedTheme === "corona" ? "Corona" : "Classic";
       themeToggleThumb.textContent = resolvedTheme === "corona" ? "Corona" : "Classic";
       localStorage.setItem(THEME_STORAGE_KEY, resolvedTheme);
-    }
+    }}
 
-    themeToggle.addEventListener("click", () => {
+    themeToggle.addEventListener("click", () => {{
       applyTheme(document.body.classList.contains("theme-corona") ? "classic" : "corona");
-    });
+    }});
 
     applyTheme(localStorage.getItem(THEME_STORAGE_KEY) || "classic");
   </script>
