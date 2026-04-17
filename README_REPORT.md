@@ -44,6 +44,31 @@ python server.py
 
 O servidor ja aceita `HOST` e `PORT` por variavel de ambiente, entao ele funciona bem em container.
 
+## Endurecimento de seguranca
+
+Para ambientes corporativos mais restritos, o app agora suporta:
+
+- autenticacao basica opcional
+- allowlist opcional por IP ou rede
+- headers de seguranca HTTP
+- processamento do `.xlsx` somente em memoria
+
+Variaveis de ambiente uteis no Coolify:
+
+```text
+HOST=0.0.0.0
+PORT=8000
+BASIC_AUTH_USER=seu_usuario
+BASIC_AUTH_PASSWORD=sua_senha_forte
+ALLOWED_IPS=187.77.250.164,10.0.0.0/8,192.168.0.0/16
+```
+
+Observacoes:
+
+- `BASIC_AUTH_USER` e `BASIC_AUTH_PASSWORD` protegem o site inteiro
+- `ALLOWED_IPS` aceita IPs individuais e redes CIDR separadas por virgula
+- `/health` continua aberto para o healthcheck do deploy
+
 ## Fluxo de uso
 
 1. clique em `Upload And Open Report`

@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import html
+import hmac
 import json
+import ipaddress
 import os
 from email.parser import BytesParser
 from email.policy import default
@@ -15,6 +18,9 @@ from generate_report import build_report_html
 
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+BASIC_AUTH_USER = os.getenv("BASIC_AUTH_USER", "")
+BASIC_AUTH_PASSWORD = os.getenv("BASIC_AUTH_PASSWORD", "")
+ALLOWED_IPS = [item.strip() for item in os.getenv("ALLOWED_IPS", "").split(",") if item.strip()]
 
 
 def parse_uploaded_spreadsheet(headers, body: bytes) -> tuple[str, bytes] | tuple[None, None]:
@@ -211,12 +217,74 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
 class ReportHandler(BaseHTTPRequestHandler):
     server_version = "LocalReportServer/3.0"
 
+    def _client_ip(self) -> str:
+        forwarded_for = self.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+        return forwarded_for or self.client_address[0]
+
+    def _request_is_https(self) -> bool:
+        return self.headers.get("X-Forwarded-Proto", "").lower() == "https"
+
+    def _is_ip_allowed(self) -> bool:
+        if not ALLOWED_IPS:
+            return True
+        client_ip = ipaddress.ip_address(self._client_ip())
+        for value in ALLOWED_IPS:
+            try:
+                if "/" in value:
+                    if client_ip in ipaddress.ip_network(value, strict=False):
+                        return True
+                elif client_ip == ipaddress.ip_address(value):
+                    return True
+            except ValueError:
+                continue
+        return False
+
+    def _is_authenticated(self) -> bool:
+        if not BASIC_AUTH_USER or not BASIC_AUTH_PASSWORD:
+            return True
+        header = self.headers.get("Authorization", "")
+        if not header.startswith("Basic "):
+            return False
+        try:
+            decoded = base64.b64decode(header.split(" ", 1)[1]).decode("utf-8")
+        except Exception:  # noqa: BLE001
+            return False
+        username, separator, password = decoded.partition(":")
+        return (
+            separator == ":"
+            and hmac.compare_digest(username, BASIC_AUTH_USER)
+            and hmac.compare_digest(password, BASIC_AUTH_PASSWORD)
+        )
+
+    def _send_auth_challenge(self) -> None:
+        self.send_response(HTTPStatus.UNAUTHORIZED)
+        self.send_header("WWW-Authenticate", 'Basic realm="Weekly Report"')
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", "0")
+        self._send_security_headers()
+        self.end_headers()
+
+    def _send_security_headers(self) -> None:
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+            "script-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self' data:; "
+            "object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
+        )
+        if self._request_is_https():
+            self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+
     def _send_text(self, status: int, body: str, content_type: str = "text/html; charset=utf-8") -> None:
         encoded = body.encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(encoded)))
         self.send_header("Cache-Control", "no-store")
+        self._send_security_headers()
         self.end_headers()
         self.wfile.write(encoded)
 
@@ -225,6 +293,14 @@ class ReportHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
+
+        if parsed.path != "/health" and not self._is_ip_allowed():
+            self._send_text(HTTPStatus.FORBIDDEN, "<h1>403</h1><p>Access denied.</p>")
+            return
+
+        if parsed.path != "/health" and not self._is_authenticated():
+            self._send_auth_challenge()
+            return
 
         if parsed.path == "/":
             self._send_text(HTTPStatus.OK, render_home_page())
@@ -238,6 +314,14 @@ class ReportHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+
+        if not self._is_ip_allowed():
+            self._send_text(HTTPStatus.FORBIDDEN, "<h1>403</h1><p>Access denied.</p>")
+            return
+
+        if not self._is_authenticated():
+            self._send_auth_challenge()
+            return
 
         if parsed.path != "/upload":
             self._send_text(HTTPStatus.NOT_FOUND, "<h1>404</h1><p>Page not found.</p>")
