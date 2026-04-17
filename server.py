@@ -191,7 +191,7 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
   <div class="page">
     <section class="hero">
       <h1>Weekly Report Automation</h1>
-      <p>Upload an <code>.xlsx</code> file and the system generates the dashboard immediately.</p>
+      <p>Upload an .xlsx file and the system generates the dashboard immediately.</p>
       <p>No uploaded spreadsheet is stored on the server after processing.</p>
       <form class="upload-form" method="post" action="/upload" enctype="multipart/form-data">
         <div class="upload-row">
@@ -205,9 +205,9 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
 
     <section class="section">
       <h2>How to use</h2>
-      <p>1. Start the server with <code>python3 server.py</code>.</p>
-      <p>2. Open <code>http://127.0.0.1:8000</code> in the browser.</p>
-      <p>3. Upload an <code>.xlsx</code> file and the report will open directly.</p>
+      <p>1. <code>upload a .xlsx file</code>.</p>
+      <p>2. Open <code>Generate your report</code> in the browser.</p>
+      <p>3. Close application <code>NO DATA IS STORED</code>.</p>
     </section>
   </div>
 </body>
