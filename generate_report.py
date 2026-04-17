@@ -1611,6 +1611,31 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const CATEGORY_ORDER = ["Stuck pipe", "Optimization", "Operational Compliance", "Well Control", "Reporting"];
     const THEME_STORAGE_KEY = "weekly-report-theme";
 
+    function getChartTheme() {
+      const isCorona = document.body.classList.contains("theme-corona");
+      return isCorona
+        ? {
+            text: "#f5f5f5",
+            muted: "#a1aab8",
+            grid: "#2c2e33",
+            axis: "#3a3d46",
+            line: "#0090e7",
+            area: "rgba(0, 144, 231, 0.16)",
+            pointLabel: "#f5f5f5",
+            valueLabel: "#d5d9e0",
+          }
+        : {
+            text: "#1f2d3d",
+            muted: "#607085",
+            grid: "#d8e2ef",
+            axis: "#9fb3c8",
+            line: "#1264d6",
+            area: "rgba(18, 100, 214, 0.10)",
+            pointLabel: "#34475d",
+            valueLabel: "#6b7b8d",
+          };
+    }
+
     function applyTheme(theme) {
       const resolvedTheme = theme === "corona" ? "corona" : "classic";
       document.body.classList.toggle("theme-corona", resolvedTheme === "corona");
@@ -1731,6 +1756,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         return;
       }
 
+      const chartTheme = getChartTheme();
+
       const width = 920;
       const height = 280;
       const paddingX = 48;
@@ -1751,7 +1778,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       const labels = points
         .map((point) => {
-          return '<text x="' + point.x.toFixed(2) + '" y="' + (height - 10) + '" text-anchor="middle" font-size="11" fill="#607085">' + escapeHtml(point.label) + "</text>";
+          return '<text x="' + point.x.toFixed(2) + '" y="' + (height - 10) + '" text-anchor="middle" font-size="11" fill="' + chartTheme.muted + '">' + escapeHtml(point.label) + "</text>";
         })
         .join("");
 
@@ -1759,8 +1786,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .map((point) => {
           return (
             '<g>' +
-            '<circle cx="' + point.x.toFixed(2) + '" cy="' + point.y.toFixed(2) + '" r="4.5" fill="#1264d6"></circle>' +
-            '<text x="' + point.x.toFixed(2) + '" y="' + (point.y - 10).toFixed(2) + '" text-anchor="middle" font-size="11" fill="#34475d">' + escapeHtml(String(point.value)) + "</text>" +
+            '<circle cx="' + point.x.toFixed(2) + '" cy="' + point.y.toFixed(2) + '" r="4.5" fill="' + chartTheme.line + '"></circle>' +
+            '<text x="' + point.x.toFixed(2) + '" y="' + (point.y - 10).toFixed(2) + '" text-anchor="middle" font-size="11" fill="' + chartTheme.pointLabel + '">' + escapeHtml(String(point.value)) + "</text>" +
             "</g>"
           );
         })
@@ -1768,14 +1795,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       const grid = Array.from({ length: 5 }, (_, index) => {
         const y = paddingTop + (chartHeight * index) / 4;
-        return '<line x1="' + paddingX + '" y1="' + y.toFixed(2) + '" x2="' + (width - paddingX) + '" y2="' + y.toFixed(2) + '" stroke="#d8e2ef" stroke-dasharray="4 5"></line>';
+        return '<line x1="' + paddingX + '" y1="' + y.toFixed(2) + '" x2="' + (width - paddingX) + '" y2="' + y.toFixed(2) + '" stroke="' + chartTheme.grid + '" stroke-dasharray="4 5"></line>';
       }).join("");
 
       target.innerHTML =
         '<svg class="line-svg" viewBox="0 0 ' + width + " " + height + '" role="img" aria-label="Intervention trend">' +
         grid +
-        '<path d="' + areaPath + '" fill="rgba(18, 100, 214, 0.10)"></path>' +
-        '<path d="' + path + '" fill="none" stroke="#1264d6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>' +
+        '<path d="' + areaPath + '" fill="' + chartTheme.area + '"></path>' +
+        '<path d="' + path + '" fill="none" stroke="' + chartTheme.line + '" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>' +
         dots +
         labels +
         "</svg>";
@@ -1816,6 +1843,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         target.innerHTML = '<div class="empty">No data available for this block.</div>';
         return;
       }
+
+      const chartTheme = getChartTheme();
 
       const primaryMax = Math.max(
         ...items.flatMap((item) =>
@@ -1869,8 +1898,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         const y = margin.top + chartHeight - (value / maxValue) * chartHeight;
         return (
           '<g>' +
-          '<line x1="' + margin.left + '" y1="' + y.toFixed(2) + '" x2="' + (width - margin.right) + '" y2="' + y.toFixed(2) + '" stroke="#d8e2ef" stroke-dasharray="4 5"></line>' +
-          '<text x="' + (margin.left - 10) + '" y="' + (y + 4).toFixed(2) + '" text-anchor="end" font-size="11" fill="#6b7b8d">' + escapeHtml(formatNumber(value)) + "</text>" +
+          '<line x1="' + margin.left + '" y1="' + y.toFixed(2) + '" x2="' + (width - margin.right) + '" y2="' + y.toFixed(2) + '" stroke="' + chartTheme.grid + '" stroke-dasharray="4 5"></line>' +
+          '<text x="' + (margin.left - 10) + '" y="' + (y + 4).toFixed(2) + '" text-anchor="end" font-size="11" fill="' + chartTheme.valueLabel + '">' + escapeHtml(formatNumber(value)) + "</text>" +
           "</g>"
         );
       }).join("");
@@ -1898,7 +1927,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
               return (
                 '<g>' +
                 '<rect x="' + x.toFixed(2) + '" y="' + y.toFixed(2) + '" width="' + barWidth.toFixed(2) + '" height="' + Math.max(2, barHeight).toFixed(2) + '" rx="10" fill="' + series.color + '"></rect>' +
-                '<text x="' + (x + barWidth / 2).toFixed(2) + '" y="' + displayY.toFixed(2) + '" text-anchor="middle" font-size="11" font-weight="700" fill="#34475d">' + escapeHtml(series.formatted) + "</text>" +
+                '<text x="' + (x + barWidth / 2).toFixed(2) + '" y="' + displayY.toFixed(2) + '" text-anchor="middle" font-size="11" font-weight="700" fill="' + chartTheme.pointLabel + '">' + escapeHtml(series.formatted) + "</text>" +
                 "</g>"
               );
             })
@@ -1907,7 +1936,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           return (
             '<g>' +
             barsSvg +
-            '<text x="' + labelX.toFixed(2) + '" y="' + labelY + '" text-anchor="middle" font-size="12" font-weight="700" fill="#1f2d3d">' + labelSvg + "</text>" +
+            '<text x="' + labelX.toFixed(2) + '" y="' + labelY + '" text-anchor="middle" font-size="12" font-weight="700" fill="' + chartTheme.text + '">' + labelSvg + "</text>" +
             "</g>"
           );
         })
@@ -1917,7 +1946,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         '<div class="column-chart-wrap">' +
         '<svg class="column-chart-svg" viewBox="0 0 ' + width + " " + height + '" role="img" aria-label="Grouped column chart">' +
         grid +
-        '<line x1="' + margin.left + '" y1="' + (margin.top + chartHeight).toFixed(2) + '" x2="' + (width - margin.right) + '" y2="' + (margin.top + chartHeight).toFixed(2) + '" stroke="#9fb3c8"></line>' +
+        '<line x1="' + margin.left + '" y1="' + (margin.top + chartHeight).toFixed(2) + '" x2="' + (width - margin.right) + '" y2="' + (margin.top + chartHeight).toFixed(2) + '" stroke="' + chartTheme.axis + '"></line>' +
         bars +
         "</svg>" +
         "</div>";
