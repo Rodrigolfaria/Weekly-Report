@@ -3376,15 +3376,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       renderTable(
         ui.flatTimeOpportunityTable,
-        ["Section", "Group", "Activity", "Highest Rig", "Highest Well", "Peer Avg (hr)", "Ideal Time (hr)", "Gap To Ideal (hr)", "How Gap Was Calculated"],
+        ["Section", "Group", "Activity", "Sample", "Highest Rig", "Highest Well", "Actual Time (hr)", "Peer Avg (hr)", "Ideal Time (hr)", "Gap To Ideal (hr)", "How Gap Was Calculated"],
         rankedOpportunities.map((opportunity) => {
           const peerReference = opportunity.peerAverage || opportunity.meanValue || opportunity.medianValue || 0;
           const explanation =
             opportunity.occurrenceCount >= 2
               ? (
                   (opportunity.occurrenceCount - 1) + " peer wells avg " + formatNumber(peerReference) +
-                  " hr; " + opportunity.topEntry.label + " took " + formatNumber(opportunity.topEntry.value) +
-                  " hr; gap = " + formatNumber(opportunity.topEntry.value) + " - " + formatNumber(opportunity.idealTime)
+                  " hr; " + opportunity.topEntry.label + " ran " + formatNumber(opportunity.topEntry.value) +
+                  " hr; ideal = " + formatNumber(opportunity.idealTime) + " hr; gap = " + formatNumber(opportunity.gapToIdeal) + " hr"
                 )
               : "Only one well available, so no peer comparison yet";
 
@@ -3392,8 +3392,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             formatFlatTimeSectionSize(opportunity.sectionSize),
             opportunity.groupLabel,
             opportunity.activityLabel,
+            String(opportunity.occurrenceCount),
             opportunity.topEntry.rigLabel || "Rig not mapped",
             opportunity.topEntry.label || "N/A",
+            formatNumber(opportunity.topEntry.value),
             formatNumber(peerReference),
             formatNumber(opportunity.idealTime),
             formatNumber(opportunity.gapToIdeal),
