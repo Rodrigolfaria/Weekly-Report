@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from generate_report import build_report_html, load_flat_time_directory
+from generate_report import build_report_html
 
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
@@ -613,7 +613,7 @@ class ReportHandler(BaseHTTPRequestHandler):
                 html_report = build_report_html(
                     selected_path.name,
                     selected_path.read_bytes(),
-                    flat_time_payload=load_flat_time_directory(ROOT_DIR),
+                    flat_time_payload={"datasets": []},
                 )
             except Exception as exc:  # noqa: BLE001
                 self._send_text(
@@ -662,7 +662,7 @@ class ReportHandler(BaseHTTPRequestHandler):
             html_report = build_report_html(
                 filename,
                 payload,
-                flat_time_payload=load_flat_time_directory(ROOT_DIR),
+                flat_time_payload={"datasets": []},
             )
         except Exception as exc:  # noqa: BLE001
             self._send_text(

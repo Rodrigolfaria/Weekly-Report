@@ -1622,6 +1622,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <div class="flat-time-toolbar">
             <div style="display:flex; gap:16px; flex-wrap:wrap;">
               <div class="field" style="min-width: 190px;">
+                <label for="flat-time-rig">Rig</label>
+                <select id="flat-time-rig">
+                  <option value="">All rigs</option>
+                </select>
+              </div>
+              <div class="field" style="min-width: 190px;">
                 <label for="flat-time-section">Section Size</label>
                 <select id="flat-time-section">
                   <option value="">All section sizes</option>
@@ -1649,7 +1655,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 <label for="flat-time-upload">Add More CSV Files</label>
                 <input id="flat-time-upload" class="file-input" type="file" accept=".csv,text/csv" multiple>
               </div>
-              <button id="flat-time-clear-uploads" class="action-btn" type="button">Clear Added CSVs</button>
+              <button id="flat-time-clear-uploads" class="action-btn" type="button">Clear All CSVs</button>
             </div>
           </div>
 
@@ -1687,6 +1693,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
               <p class="report-note">Friendly comparison table showing how each benchmark dataset is distributed by flat time group.</p>
               <div id="flat-time-group-table"></div>
             </div>
+          </div>
+        </section>
+
+        <section class="panel section">
+          <div class="report-card">
+            <h3>Perfect Flat Time</h3>
+            <p class="report-note">Best-case curve built from the fastest observed activity durations in the current comparison set. Days are cumulative on X and depth progression is represented by section sequence on Y.</p>
+            <div id="flat-time-perfect-chart"></div>
           </div>
         </section>
       </div>
@@ -1762,6 +1776,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       weeklyStatsTable: document.getElementById("weekly-stats-table"),
       flatTimeTitle: document.getElementById("flat-time-title"),
       flatTimeSubtitle: document.getElementById("flat-time-subtitle"),
+      flatTimeRig: document.getElementById("flat-time-rig"),
       flatTimeSection: document.getElementById("flat-time-section"),
       flatTimeMetric: document.getElementById("flat-time-metric"),
       flatTimeTopN: document.getElementById("flat-time-top-n"),
@@ -1773,6 +1788,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       flatTimeActivityChart: document.getElementById("flat-time-activity-chart"),
       flatTimeOpportunityTable: document.getElementById("flat-time-opportunity-table"),
       flatTimeGroupTable: document.getElementById("flat-time-group-table"),
+      flatTimePerfectChart: document.getElementById("flat-time-perfect-chart"),
     };
 
     const currencyFormatter = new Intl.NumberFormat("en-US", {
@@ -1791,7 +1807,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const FLAT_TIME_SERIES_COLORS = ["#1264d6", "#0f766e", "#c06a0a", "#be123c", "#7c3aed", "#0891b2", "#16a34a", "#dc2626"];
     const FLAT_TIME_RIG_LOOKUP = buildFlatTimeRigLookup(Array.isArray(dashboardData.interventions) ? dashboardData.interventions : []);
     const flatTimeState = {
-      baseDatasets: Array.isArray(dashboardData.flatTime?.datasets) ? dashboardData.flatTime.datasets : [],
+      baseDatasets: [],
       uploadedDatasets: [],
     };
 
@@ -1896,6 +1912,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       return "Rig not mapped";
     }
 
+    function deriveFlatTimeRigLabelFromFileName(fileName) {
+      const baseName = String(fileName || "").replace(/\\.[^.]+$/, "");
+      const prefix = baseName.split("_")[0].trim();
+      if (prefix) return prefix;
+      return "Rig not mapped";
+    }
+
     function enrichFlatTimeDataset(dataset) {
       if (!dataset) return dataset;
       return {
@@ -1934,77 +1957,150 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .replace(/\\r/g, "\\n")
         .split("\\n")
         .map((line) => parseCsvLine(line));
+      const rigLabel = deriveFlatTimeRigLabelFromFileName(fileName);
+      const datasetMap = new Map();
+      let currentGroupName = "";
+      let currentHeader = null;
 
-      const subjectWellRow = rows.find((row) => row[0] === "Subject Well");
-      const subjectWell = (subjectWellRow?.[1] || fileName).trim();
-      const groups = [];
-      let currentGroup = null;
+      function getDataset(subjectWell) {
+        if (!datasetMap.has(subjectWell)) {
+          datasetMap.set(subjectWell, {
+            id: slugify(fileName + "-" + subjectWell),
+            fileName,
+            subjectWell,
+            rigLabel,
+            groupsMap: new Map(),
+          });
+        }
+        return datasetMap.get(subjectWell);
+      }
 
-      rows.forEach((row) => {
-        const first = (row[0] || "").trim();
-        if (first === "Group Name") {
-          if (currentGroup && currentGroup.activities.length) {
-            groups.push(currentGroup);
-          }
-          currentGroup = {
-            groupName: (row[1] || "Unknown").trim(),
+      function getGroup(dataset, groupName) {
+        if (!dataset.groupsMap.has(groupName)) {
+          dataset.groupsMap.set(groupName, {
+            groupName,
             activities: [],
             totalSubjectHours: 0,
             totalMeanHours: 0,
             totalMedianHours: 0,
-          };
-          return;
+          });
         }
-
-        if (!currentGroup) return;
-        if (first === "Activity" || first === "Group Type" || !first) return;
-
-        if (first === "Total") {
-          currentGroup.totalSubjectHours = Number(row[1] || currentGroup.totalSubjectHours || 0);
-          currentGroup.totalMeanHours = Number(row[2] || currentGroup.totalMeanHours || 0);
-          currentGroup.totalMedianHours = Number(row[3] || currentGroup.totalMedianHours || 0);
-          return;
-        }
-
-        const activity = {
-          activity: first,
-          sectionSize: extractFlatTimeSectionSize(first),
-          subjectHours: Number(row[1] || 0),
-          meanHours: Number(row[2] || 0),
-          medianHours: Number(row[3] || 0),
-        };
-        currentGroup.activities.push(activity);
-      });
-
-      if (currentGroup && currentGroup.activities.length) {
-        groups.push(currentGroup);
+        return dataset.groupsMap.get(groupName);
       }
 
-      groups.forEach((group) => {
-        if (!group.totalSubjectHours) {
-          group.totalSubjectHours = group.activities.reduce((sum, item) => sum + item.subjectHours, 0);
+      rows.forEach((row) => {
+        const first = (row[0] || "").trim();
+        if (first === "Group Name") {
+          currentGroupName = (row[1] || "Unknown").trim();
+          currentHeader = null;
+          return;
         }
-        if (!group.totalMeanHours) {
-          group.totalMeanHours = group.activities.reduce((sum, item) => sum + item.meanHours, 0);
+
+        if (!currentGroupName) return;
+        if (!first || first === "Group Type") return;
+
+        if (first === "Activity") {
+          const wellColumns = [];
+          let meanIndex = -1;
+          let medianIndex = -1;
+
+          row.forEach((cell, index) => {
+            const label = String(cell || "").trim();
+            if (index === 0 || !label) return;
+            if (/^mean/i.test(label)) {
+              meanIndex = index;
+              return;
+            }
+            if (/^median/i.test(label)) {
+              medianIndex = index;
+              return;
+            }
+            wellColumns.push({ index, label });
+          });
+
+          currentHeader = { wellColumns, meanIndex, medianIndex };
+          return;
         }
-        if (!group.totalMedianHours) {
-          group.totalMedianHours = group.activities.reduce((sum, item) => sum + item.medianHours, 0);
+
+        if (!currentHeader || !currentHeader.wellColumns.length) return;
+
+        if (first === "Total") {
+          currentHeader.wellColumns.forEach((column) => {
+            const dataset = getDataset(column.label);
+            const group = getGroup(dataset, currentGroupName);
+            group.totalSubjectHours = Number(row[column.index] || group.totalSubjectHours || 0);
+            group.totalMeanHours = currentHeader.meanIndex >= 0 ? Number(row[currentHeader.meanIndex] || group.totalMeanHours || 0) : group.totalMeanHours;
+            group.totalMedianHours = currentHeader.medianIndex >= 0 ? Number(row[currentHeader.medianIndex] || group.totalMedianHours || 0) : group.totalMedianHours;
+          });
+          return;
         }
+
+        currentHeader.wellColumns.forEach((column) => {
+          const subjectHours = Number(row[column.index] || 0);
+          if (!subjectHours) return;
+          const dataset = getDataset(column.label);
+          const group = getGroup(dataset, currentGroupName);
+          group.activities.push({
+            activity: first,
+            sectionSize: extractFlatTimeSectionSize(first),
+            subjectHours,
+            meanHours: currentHeader.meanIndex >= 0 ? Number(row[currentHeader.meanIndex] || 0) : 0,
+            medianHours: currentHeader.medianIndex >= 0 ? Number(row[currentHeader.medianIndex] || 0) : 0,
+          });
+        });
       });
 
-      return {
-        id: slugify(fileName + "-" + subjectWell),
-        fileName,
-        subjectWell,
-        groups,
-        totalSubjectHours: groups.reduce((sum, group) => sum + group.totalSubjectHours, 0),
-        totalMeanHours: groups.reduce((sum, group) => sum + group.totalMeanHours, 0),
-        totalMedianHours: groups.reduce((sum, group) => sum + group.totalMedianHours, 0),
-      };
+      return Array.from(datasetMap.values()).map((dataset) => {
+        const groups = Array.from(dataset.groupsMap.values()).filter((group) => group.activities.length || group.totalSubjectHours);
+        groups.forEach((group) => {
+          if (!group.totalSubjectHours) {
+            group.totalSubjectHours = group.activities.reduce((sum, item) => sum + item.subjectHours, 0);
+          }
+          if (!group.totalMeanHours) {
+            group.totalMeanHours = group.activities.reduce((sum, item) => sum + item.meanHours, 0);
+          }
+          if (!group.totalMedianHours) {
+            group.totalMedianHours = group.activities.reduce((sum, item) => sum + item.medianHours, 0);
+          }
+        });
+
+        return {
+          id: dataset.id,
+          fileName: dataset.fileName,
+          subjectWell: dataset.subjectWell,
+          rigLabel: dataset.rigLabel,
+          groups,
+          totalSubjectHours: groups.reduce((sum, group) => sum + group.totalSubjectHours, 0),
+          totalMeanHours: groups.reduce((sum, group) => sum + group.totalMeanHours, 0),
+          totalMedianHours: groups.reduce((sum, group) => sum + group.totalMedianHours, 0),
+        };
+      });
     }
 
     function getFlatTimeDatasets() {
       return [...flatTimeState.baseDatasets, ...flatTimeState.uploadedDatasets].map(enrichFlatTimeDataset);
+    }
+
+    function getAvailableFlatTimeRigs(datasets) {
+      return Array.from(new Set(datasets.map((dataset) => dataset.rigLabel || "Rig not mapped"))).sort((left, right) => left.localeCompare(right));
+    }
+
+    function populateFlatTimeRigOptions(datasets) {
+      const current = ui.flatTimeRig.value;
+      const options = ['<option value="">All rigs</option>'];
+      const rigs = getAvailableFlatTimeRigs(datasets);
+      rigs.forEach((rig) => {
+        options.push('<option value="' + escapeHtml(rig) + '">' + escapeHtml(rig) + "</option>");
+      });
+      ui.flatTimeRig.innerHTML = options.join("");
+      if (rigs.includes(current)) {
+        ui.flatTimeRig.value = current;
+      }
+    }
+
+    function filterFlatTimeDatasetsByRig(datasets, rigLabel) {
+      if (!rigLabel) return datasets;
+      return datasets.filter((dataset) => (dataset.rigLabel || "Rig not mapped") === rigLabel);
     }
 
     function getFlatTimeMetricKey() {
@@ -2096,6 +2192,113 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           };
         })
         .filter(Boolean);
+    }
+
+    function buildPerfectFlatTimeSections(datasets) {
+      const sectionMap = new Map();
+
+      datasets.forEach((dataset) => {
+        dataset.groups.forEach((group) => {
+          group.activities.forEach((activity) => {
+            const sectionSize = activity.sectionSize || extractFlatTimeSectionSize(activity.activity);
+            if (sectionSize === "__no_section__") return;
+            if (!sectionMap.has(sectionSize)) sectionMap.set(sectionSize, new Map());
+            const activityMap = sectionMap.get(sectionSize);
+            const value = Number(activity.subjectHours || 0);
+            if (value <= 0) return;
+            const current = activityMap.get(activity.activity);
+            if (!current || value < current) activityMap.set(activity.activity, value);
+          });
+        });
+      });
+
+      return Array.from(sectionMap.entries())
+        .map(([sectionSize, activityMap]) => ({
+          sectionSize,
+          bestHours: Array.from(activityMap.values()).reduce((sum, value) => sum + value, 0),
+        }))
+        .filter((item) => item.bestHours > 0)
+        .sort((left, right) => Number(right.sectionSize) - Number(left.sectionSize));
+    }
+
+    function renderPerfectFlatTimeChart(target, datasets) {
+      const sections = buildPerfectFlatTimeSections(datasets);
+      if (!sections.length) {
+        target.innerHTML = '<div class="empty">No section-sized activities available to draw the perfect flat time curve.</div>';
+        return;
+      }
+
+      const chartTheme = getChartTheme();
+      let cumulativeDays = 0;
+      const points = sections.map((section, index) => {
+        cumulativeDays += section.bestHours / 24;
+        return {
+          ...section,
+          cumulativeDays,
+          depthIndex: index + 1,
+        };
+      });
+
+      const width = 960;
+      const height = 420;
+      const margin = { top: 22, right: 24, bottom: 48, left: 88 };
+      const chartWidth = width - margin.left - margin.right;
+      const chartHeight = height - margin.top - margin.bottom;
+      const maxDays = Math.max(...points.map((point) => point.cumulativeDays), 1);
+      const maxDepth = Math.max(points.length, 1);
+
+      const svgPoints = points.map((point) => ({
+        ...point,
+        x: margin.left + (point.cumulativeDays / maxDays) * chartWidth,
+        y: margin.top + ((point.depthIndex - 1) / Math.max(maxDepth - 1, 1)) * chartHeight,
+      }));
+
+      const path = svgPoints
+        .map((point, index) => (index === 0 ? "M" : "L") + point.x.toFixed(2) + " " + point.y.toFixed(2))
+        .join(" ");
+
+      const xTicks = Array.from({ length: 5 }, (_, index) => {
+        const value = (maxDays / 4) * index;
+        const x = margin.left + (value / maxDays) * chartWidth;
+        return (
+          '<g>' +
+          '<line x1="' + x.toFixed(2) + '" y1="' + margin.top + '" x2="' + x.toFixed(2) + '" y2="' + (height - margin.bottom) + '" stroke="' + chartTheme.grid + '" stroke-dasharray="4 5"></line>' +
+          '<text x="' + x.toFixed(2) + '" y="' + (height - 12) + '" text-anchor="middle" font-size="11" fill="' + chartTheme.valueLabel + '">' + escapeHtml(formatNumber(value)) + "</text>" +
+          "</g>"
+        );
+      }).join("");
+
+      const yTicks = svgPoints
+        .map((point) => (
+          '<g>' +
+          '<line x1="' + margin.left + '" y1="' + point.y.toFixed(2) + '" x2="' + (width - margin.right) + '" y2="' + point.y.toFixed(2) + '" stroke="' + chartTheme.grid + '" stroke-dasharray="4 5"></line>' +
+          '<text x="' + (margin.left - 12) + '" y="' + (point.y + 4).toFixed(2) + '" text-anchor="end" font-size="11" font-weight="700" fill="' + chartTheme.text + '">' + escapeHtml(formatFlatTimeSectionSize(point.sectionSize)) + "</text>" +
+          "</g>"
+        ))
+        .join("");
+
+      const markers = svgPoints
+        .map((point) => (
+          '<g>' +
+          '<circle cx="' + point.x.toFixed(2) + '" cy="' + point.y.toFixed(2) + '" r="5" fill="#1264d6"></circle>' +
+          '<text x="' + (point.x + 8).toFixed(2) + '" y="' + (point.y - 8).toFixed(2) + '" font-size="11" font-weight="700" fill="' + chartTheme.pointLabel + '">' + escapeHtml(formatNumber(point.cumulativeDays) + " d") + "</text>" +
+          "</g>"
+        ))
+        .join("");
+
+      target.innerHTML =
+        '<div class="column-chart-wrap">' +
+        '<svg class="column-chart-svg" viewBox="0 0 ' + width + " " + height + '" role="img" aria-label="Perfect flat time chart">' +
+        xTicks +
+        yTicks +
+        '<line x1="' + margin.left + '" y1="' + margin.top + '" x2="' + margin.left + '" y2="' + (height - margin.bottom) + '" stroke="' + chartTheme.axis + '"></line>' +
+        '<line x1="' + margin.left + '" y1="' + (height - margin.bottom) + '" x2="' + (width - margin.right) + '" y2="' + (height - margin.bottom) + '" stroke="' + chartTheme.axis + '"></line>' +
+        '<path d="' + path + '" fill="none" stroke="#1264d6" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></path>' +
+        markers +
+        '<text x="' + (margin.left + chartWidth / 2).toFixed(2) + '" y="' + (height - 4) + '" text-anchor="middle" font-size="12" font-weight="700" fill="' + chartTheme.text + '">Days</text>' +
+        '<text x="18" y="' + (margin.top + chartHeight / 2).toFixed(2) + '" text-anchor="middle" font-size="12" font-weight="700" fill="' + chartTheme.text + '" transform="rotate(-90 18 ' + (margin.top + chartHeight / 2).toFixed(2) + ')">Depth / Section Progression</text>' +
+        "</svg>" +
+        "</div>";
     }
 
     function average(numbers) {
@@ -3051,16 +3254,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     function renderFlatTime() {
-      const rawDatasets = getFlatTimeDatasets();
+      const allDatasets = getFlatTimeDatasets();
       const metricKey = getFlatTimeMetricKey();
       const totalKey = getFlatTimeTotalKey();
       const topN = Number(ui.flatTimeTopN.value || 10);
+      const selectedRig = ui.flatTimeRig.value || "";
       const selectedSectionSize = ui.flatTimeSection.value || "";
 
-      renderFlatTimeDatasetTags(rawDatasets);
-      populateFlatTimeSectionOptions(rawDatasets);
+      renderFlatTimeDatasetTags(allDatasets);
+      populateFlatTimeRigOptions(allDatasets);
 
-      if (!rawDatasets.length) {
+      if (!allDatasets.length) {
         ui.flatTimeTitle.textContent = "No flat time datasets loaded";
         ui.flatTimeSubtitle.textContent = "Use the CSV uploader to compare benchmark files.";
         ui.flatTimeSummary.innerHTML = '<div class="empty">Upload flat time CSV files to start the comparison.</div>';
@@ -3068,19 +3272,23 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         ui.flatTimeActivityChart.innerHTML = '<div class="empty">No flat time activity data available.</div>';
         ui.flatTimeOpportunityTable.innerHTML = '<div class="empty">No flat time comparison table available.</div>';
         ui.flatTimeGroupTable.innerHTML = '<div class="empty">No flat time group table available.</div>';
+        ui.flatTimePerfectChart.innerHTML = '<div class="empty">Upload flat time CSV files to draw the perfect flat time curve.</div>';
         return;
       }
 
-      const datasets = filterFlatTimeDatasetsBySection(rawDatasets, selectedSectionSize);
+      const rigDatasets = filterFlatTimeDatasetsByRig(allDatasets, selectedRig);
+      populateFlatTimeSectionOptions(rigDatasets);
+      const datasets = filterFlatTimeDatasetsBySection(rigDatasets, selectedSectionSize);
 
       if (!datasets.length) {
         ui.flatTimeTitle.textContent = "No data for selected section size";
-        ui.flatTimeSubtitle.textContent = "Try another section size or switch back to all sections.";
+        ui.flatTimeSubtitle.textContent = "Try another rig or section size, or switch back to all sections.";
         ui.flatTimeSummary.innerHTML = '<div class="empty">No benchmark activities match the selected section size.</div>';
         ui.flatTimeGroupChart.innerHTML = '<div class="empty">No flat time group data available for this section size.</div>';
         ui.flatTimeActivityChart.innerHTML = '<div class="empty">No flat time activity data available for this section size.</div>';
         ui.flatTimeOpportunityTable.innerHTML = '<div class="empty">No flat time comparison table available for this section size.</div>';
         ui.flatTimeGroupTable.innerHTML = '<div class="empty">No flat time group table available for this section size.</div>';
+        ui.flatTimePerfectChart.innerHTML = '<div class="empty">No section-sized activities available for the perfect flat time curve.</div>';
         return;
       }
 
@@ -3088,8 +3296,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const activityItems = buildFlatTimeActivityItems(datasets, metricKey);
       const sectionLabel = selectedSectionSize ? formatFlatTimeSectionSize(selectedSectionSize) : "All section sizes";
 
-      ui.flatTimeTitle.textContent = datasets.length + " benchmark files compared";
-      ui.flatTimeSubtitle.textContent = sectionLabel + " across " + datasets.map((dataset) => dataset.subjectWell).join(" vs ");
+      ui.flatTimeTitle.textContent = datasets.length + " wells compared";
+      ui.flatTimeSubtitle.textContent = (selectedRig || "All rigs") + " • " + sectionLabel + " • " + datasets.map((dataset) => dataset.subjectWell).join(" vs ");
 
       renderFlatTimeSummary(datasets, metricKey, totalKey, activityItems, groupItems);
 
@@ -3150,6 +3358,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           formatNumber(item.total),
         ])
       );
+
+      renderPerfectFlatTimeChart(ui.flatTimePerfectChart, datasets);
     }
 
     function renderWeeklyReport() {
@@ -3588,12 +3798,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         ui.presetButtons.forEach((button) => button.classList.remove("is-active"));
         renderWeeklyReport();
       });
+      ui.flatTimeRig.addEventListener("change", renderFlatTime);
       ui.flatTimeSection.addEventListener("change", renderFlatTime);
       ui.flatTimeMetric.addEventListener("change", renderFlatTime);
       ui.flatTimeTopN.addEventListener("change", renderFlatTime);
       ui.flatTimeClearUploads.addEventListener("click", () => {
         flatTimeState.uploadedDatasets = [];
         ui.flatTimeUpload.value = "";
+        ui.flatTimeRig.value = "";
+        ui.flatTimeSection.value = "";
         renderFlatTime();
       });
       ui.flatTimeUpload.addEventListener("change", async () => {
@@ -3603,6 +3816,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           files.map(async (file) => parseFlatTimeCsvText(file.name, await file.text()))
         );
         const prepared = parsed
+          .flat()
           .filter((item) => item && item.groups && item.groups.length)
           .map((item) => ({ ...item, id: createFlatTimeUploadId(item.fileName, item.subjectWell) }));
         flatTimeState.uploadedDatasets = [
@@ -4083,7 +4297,7 @@ def build_report(spreadsheet: Path, output_path: Path) -> None:
     html_output = build_report_html(
         spreadsheet.name,
         spreadsheet.read_bytes(),
-        flat_time_payload=load_flat_time_directory(spreadsheet.parent),
+        flat_time_payload={"datasets": []},
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(html_output, encoding="utf-8")
