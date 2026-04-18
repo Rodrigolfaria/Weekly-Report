@@ -820,6 +820,85 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       line-height: 1.5;
     }
 
+    .confidence-badge,
+    .drill-chip,
+    .table-action {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      border: 1px solid transparent;
+    }
+
+    .confidence-badge.high {
+      color: #166534;
+      background: rgba(34, 197, 94, 0.16);
+      border-color: rgba(34, 197, 94, 0.28);
+    }
+
+    .confidence-badge.medium {
+      color: #92400e;
+      background: rgba(245, 158, 11, 0.16);
+      border-color: rgba(245, 158, 11, 0.28);
+    }
+
+    .confidence-badge.low {
+      color: #991b1b;
+      background: rgba(239, 68, 68, 0.16);
+      border-color: rgba(239, 68, 68, 0.28);
+    }
+
+    .table-action {
+      appearance: none;
+      background: rgba(18, 100, 214, 0.08);
+      border-color: rgba(18, 100, 214, 0.18);
+      color: var(--ink);
+      cursor: pointer;
+      font: inherit;
+      text-align: left;
+      padding: 6px 10px;
+    }
+
+    .table-action:hover {
+      background: rgba(18, 100, 214, 0.16);
+    }
+
+    .drill-grid {
+      display: grid;
+      gap: 18px;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    }
+
+    .drill-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .drill-item {
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: var(--panel-alt);
+      border: 1px solid var(--line);
+    }
+
+    .drill-item strong {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--ink);
+    }
+
+    .drill-item span {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
     .metric-strip {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -1649,6 +1728,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                   <option value="15">Top 15</option>
                 </select>
               </div>
+              <div class="field" style="min-width: 190px;">
+                <label for="flat-time-mode">Analysis Mode</label>
+                <select id="flat-time-mode">
+                  <option value="executive" selected>Executive</option>
+                  <option value="engineering">Engineering</option>
+                </select>
+              </div>
+              <div class="field" style="min-width: 220px;">
+                <label for="flat-time-well">Selected Well</label>
+                <select id="flat-time-well">
+                  <option value="">Auto-select worst well</option>
+                </select>
+              </div>
             </div>
             <div class="flat-time-upload-panel">
               <div class="field" style="min-width: 320px;">
@@ -1662,11 +1754,56 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <div id="flat-time-dataset-tags" class="tag-list"></div>
         </section>
 
-        <section class="panel section">
+        <section class="panel section" data-flat-mode="executive engineering">
           <div id="flat-time-summary" class="metric-strip"></div>
         </section>
 
-        <section class="panel section">
+        <section class="panel section" data-flat-mode="executive engineering">
+          <div class="report-grid-2">
+            <div class="report-card">
+              <h3>Well Ranking by Excess Time</h3>
+              <p class="report-note">Ranks wells by time above the recommended ideal, highlighting the main activity and group driving the excess.</p>
+              <div id="flat-time-well-ranking"></div>
+            </div>
+            <div class="report-card">
+              <h3>Pareto of Recoverable Hours</h3>
+              <p class="report-note">Shows which activities concentrate the largest recoverable hours so improvement effort can be focused where it matters most.</p>
+              <div id="flat-time-pareto-chart"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="executive engineering">
+          <div class="report-grid-2">
+            <div class="report-card">
+              <h3>Well vs Ideal Waterfall</h3>
+              <p class="report-note">Starts from the selected well actual flat time, subtracts the biggest activity gaps and lands on the recommended ideal total.</p>
+              <div id="flat-time-waterfall-chart"></div>
+            </div>
+            <div class="report-card">
+              <h3>Section Benchmark Chart</h3>
+              <p class="report-note">Compares each section average against the recommended ideal and shows the spread to recover.</p>
+              <div id="flat-time-section-benchmark-chart"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="executive engineering">
+          <div class="report-grid-2">
+            <div class="report-card">
+              <h3>Rig Benchmark Summary</h3>
+              <p class="report-note">Summarizes rig-level average flat time, ideal target, excess time and the main repeating activity.</p>
+              <div id="flat-time-rig-summary"></div>
+            </div>
+            <div class="report-card">
+              <h3>Opportunity Pipeline</h3>
+              <p class="report-note">Executive list of the activities with the highest recoverable hours and the strongest case for procedural action.</p>
+              <div id="flat-time-opportunity-pipeline"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="engineering">
           <div class="flat-time-chart-stack">
             <div class="report-card">
               <h3>Group Comparison</h3>
@@ -1681,7 +1818,32 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           </div>
         </section>
 
-        <section class="panel section">
+        <section class="panel section" data-flat-mode="executive engineering">
+          <div class="report-card">
+            <h3>Activity Benchmark Table</h3>
+            <p class="report-note">Engineering view of each activity, including sample size, distribution, recommended ideal time, variability and recoverable hours.</p>
+            <div id="flat-time-benchmark-table"></div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="executive engineering">
+          <div class="report-card">
+            <h3>Drill-down Explorer</h3>
+            <p class="report-note" id="flat-time-drilldown-note">Click a well or activity in the tables above to open the benchmark, peer comparison and ideal-time logic.</p>
+            <div class="drill-grid">
+              <div>
+                <h3 style="font-size:16px; margin-bottom:10px;">Selected Well Breakdown</h3>
+                <div id="flat-time-well-drilldown"></div>
+              </div>
+              <div>
+                <h3 style="font-size:16px; margin-bottom:10px;">Selected Activity Benchmark</h3>
+                <div id="flat-time-activity-drilldown"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="engineering">
           <div class="flat-time-chart-stack">
             <div class="report-card">
               <h3>Reduction Opportunity Matrix</h3>
@@ -1696,10 +1858,33 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           </div>
         </section>
 
-        <section class="panel section">
+        <section class="panel section" data-flat-mode="engineering">
+          <div class="report-grid-2">
+            <div class="report-card">
+              <h3>Top Loss Drivers by Well</h3>
+              <p class="report-note">Lists the top three activities that explain the excess time for each well.</p>
+              <div id="flat-time-loss-drivers"></div>
+            </div>
+            <div class="report-card">
+              <h3>Variability Box Plot</h3>
+              <p class="report-note">Shows spread by activity so unstable work can be separated from predictable, repeatable work.</p>
+              <div id="flat-time-variability-chart"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="engineering">
           <div class="report-card">
-            <h3>Perfect Flat Time</h3>
-            <p class="report-note">Best-case curve built from the fastest observed activity durations in the current comparison set. Days are cumulative on X and depth progression is represented by section sequence on Y.</p>
+            <h3>Activity Heatmap</h3>
+            <p class="report-note">Heatmap of hours above ideal by well and activity, making repeated loss patterns visible at a glance.</p>
+            <div id="flat-time-heatmap"></div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="executive engineering">
+          <div class="report-card">
+            <h3>Perfect Flat Time vs Wells</h3>
+            <p class="report-note">Compares the ideal cumulative flat time curve against the actual wells. Days are cumulative on X and depth progression is represented by section sequence on Y.</p>
             <div id="flat-time-perfect-chart"></div>
           </div>
         </section>
@@ -1780,15 +1965,31 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       flatTimeSection: document.getElementById("flat-time-section"),
       flatTimeMetric: document.getElementById("flat-time-metric"),
       flatTimeTopN: document.getElementById("flat-time-top-n"),
+      flatTimeMode: document.getElementById("flat-time-mode"),
+      flatTimeWell: document.getElementById("flat-time-well"),
       flatTimeUpload: document.getElementById("flat-time-upload"),
       flatTimeClearUploads: document.getElementById("flat-time-clear-uploads"),
       flatTimeDatasetTags: document.getElementById("flat-time-dataset-tags"),
       flatTimeSummary: document.getElementById("flat-time-summary"),
+      flatTimeWellRanking: document.getElementById("flat-time-well-ranking"),
+      flatTimeParetoChart: document.getElementById("flat-time-pareto-chart"),
+      flatTimeWaterfallChart: document.getElementById("flat-time-waterfall-chart"),
+      flatTimeSectionBenchmarkChart: document.getElementById("flat-time-section-benchmark-chart"),
+      flatTimeRigSummary: document.getElementById("flat-time-rig-summary"),
+      flatTimeOpportunityPipeline: document.getElementById("flat-time-opportunity-pipeline"),
       flatTimeGroupChart: document.getElementById("flat-time-group-chart"),
       flatTimeActivityChart: document.getElementById("flat-time-activity-chart"),
+      flatTimeBenchmarkTable: document.getElementById("flat-time-benchmark-table"),
+      flatTimeDrilldownNote: document.getElementById("flat-time-drilldown-note"),
+      flatTimeWellDrilldown: document.getElementById("flat-time-well-drilldown"),
+      flatTimeActivityDrilldown: document.getElementById("flat-time-activity-drilldown"),
       flatTimeOpportunityTable: document.getElementById("flat-time-opportunity-table"),
       flatTimeGroupTable: document.getElementById("flat-time-group-table"),
+      flatTimeLossDrivers: document.getElementById("flat-time-loss-drivers"),
+      flatTimeVariabilityChart: document.getElementById("flat-time-variability-chart"),
+      flatTimeHeatmap: document.getElementById("flat-time-heatmap"),
       flatTimePerfectChart: document.getElementById("flat-time-perfect-chart"),
+      flatTimeModeSections: Array.from(document.querySelectorAll("#flat-time-view [data-flat-mode]")),
     };
 
     const currencyFormatter = new Intl.NumberFormat("en-US", {
@@ -1809,6 +2010,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const flatTimeState = {
       baseDatasets: [],
       uploadedDatasets: [],
+      focusWell: "",
+      focusActivity: "",
     };
 
     function getChartTheme() {
@@ -2113,6 +2316,37 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       return metric === "mean" ? "totalMeanHours" : metric === "median" ? "totalMedianHours" : "totalSubjectHours";
     }
 
+    function getFlatTimeMode() {
+      return ui.flatTimeMode.value || "executive";
+    }
+
+    function updateFlatTimeModeVisibility() {
+      const mode = getFlatTimeMode();
+      ui.flatTimeModeSections.forEach((section) => {
+      const allowedModes = String(section.dataset.flatMode || "executive engineering").split(/\\s+/).filter(Boolean);
+        section.hidden = !allowedModes.includes(mode);
+      });
+    }
+
+    function populateFlatTimeWellOptions(datasets, preferredWell) {
+      const current = ui.flatTimeWell.value;
+      const options = ['<option value="">Auto-select worst well</option>'];
+      const wellNames = datasets.map((dataset) => dataset.subjectWell);
+      wellNames.forEach((wellName) => {
+        const dataset = datasets.find((item) => item.subjectWell === wellName);
+        const label = wellName + (dataset && dataset.rigLabel ? " • " + dataset.rigLabel : "");
+        options.push('<option value="' + escapeHtml(wellName) + '">' + escapeHtml(label) + "</option>");
+      });
+      ui.flatTimeWell.innerHTML = options.join("");
+      if (wellNames.includes(current)) {
+        ui.flatTimeWell.value = current;
+      } else if (preferredWell && wellNames.includes(preferredWell)) {
+        ui.flatTimeWell.value = preferredWell;
+      } else {
+        ui.flatTimeWell.value = "";
+      }
+    }
+
     function createFlatTimeUploadId(fileName, subjectWell) {
       return slugify(fileName + "-" + subjectWell + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8));
     }
@@ -2221,44 +2455,89 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .sort((left, right) => Number(right.sectionSize) - Number(left.sectionSize));
     }
 
-    function renderPerfectFlatTimeChart(target, datasets) {
-      const sections = buildPerfectFlatTimeSections(datasets);
-      if (!sections.length) {
+    function renderPerfectFlatTimeChart(target, datasets, metricKey) {
+      const idealSections = buildPerfectFlatTimeSections(datasets);
+      if (!idealSections.length) {
         target.innerHTML = '<div class="empty">No section-sized activities available to draw the perfect flat time curve.</div>';
         return;
       }
 
-      const chartTheme = getChartTheme();
-      let cumulativeDays = 0;
-      const points = sections.map((section, index) => {
-        cumulativeDays += section.bestHours / 24;
-        return {
-          ...section,
-          cumulativeDays,
-          depthIndex: index + 1,
-        };
-      });
+      const sectionOrder = Array.from(
+        new Set(
+          datasets.flatMap((dataset) =>
+            dataset.groups.flatMap((group) =>
+              group.activities
+                .map((activity) => activity.sectionSize || extractFlatTimeSectionSize(activity.activity))
+                .filter((sectionSize) => sectionSize && sectionSize !== "__no_section__")
+            )
+          )
+        )
+      ).sort((left, right) => Number(right) - Number(left) || left.localeCompare(right));
 
+      const idealMap = new Map(idealSections.map((section) => [section.sectionSize, section.bestHours]));
+
+      function buildSeries(label, color, sectionHours, isIdeal) {
+        let cumulativeDays = 0;
+        const points = sectionOrder.map((sectionSize, index) => {
+          cumulativeDays += Number(sectionHours.get(sectionSize) || 0) / 24;
+          return {
+            sectionSize,
+            cumulativeDays,
+            depthIndex: index + 1,
+          };
+        });
+        return { label, color, isIdeal, points };
+      }
+
+      const series = [
+        buildSeries(
+          "Ideal curve",
+          "#1264d6",
+          new Map(sectionOrder.map((sectionSize) => [sectionSize, Number(idealMap.get(sectionSize) || 0)])),
+          true
+        ),
+        ...datasets.map((dataset, index) => {
+          const sectionHours = new Map();
+          dataset.groups.forEach((group) => {
+            group.activities.forEach((activity) => {
+              const sectionSize = activity.sectionSize || extractFlatTimeSectionSize(activity.activity);
+              if (!sectionSize || sectionSize === "__no_section__") return;
+              const value = Number(activity[metricKey] || 0);
+              sectionHours.set(sectionSize, (sectionHours.get(sectionSize) || 0) + value);
+            });
+          });
+          return buildSeries(
+            dataset.subjectWell,
+            FLAT_TIME_SERIES_COLORS[index % FLAT_TIME_SERIES_COLORS.length],
+            sectionHours,
+            false
+          );
+        }),
+      ];
+
+      const chartTheme = getChartTheme();
       const width = 960;
-      const height = 420;
-      const margin = { top: 22, right: 24, bottom: 48, left: 88 };
+      const height = 430;
+      const margin = { top: 30, right: 28, bottom: 52, left: 88 };
       const chartWidth = width - margin.left - margin.right;
       const chartHeight = height - margin.top - margin.bottom;
-      const maxDays = Math.max(...points.map((point) => point.cumulativeDays), 1);
-      const maxDepth = Math.max(points.length, 1);
+      const maxDays = Math.max(
+        ...series.flatMap((line) => line.points.map((point) => point.cumulativeDays)),
+        1
+      );
+      const maxDepth = Math.max(sectionOrder.length, 1);
 
-      const svgPoints = points.map((point) => ({
-        ...point,
-        x: margin.left + (point.cumulativeDays / maxDays) * chartWidth,
-        y: margin.top + ((point.depthIndex - 1) / Math.max(maxDepth - 1, 1)) * chartHeight,
+      const scaledSeries = series.map((line) => ({
+        ...line,
+        points: line.points.map((point) => ({
+          ...point,
+          x: margin.left + (point.cumulativeDays / maxDays) * chartWidth,
+          y: margin.top + ((point.depthIndex - 1) / Math.max(maxDepth - 1, 1)) * chartHeight,
+        })),
       }));
 
-      const path = svgPoints
-        .map((point, index) => (index === 0 ? "M" : "L") + point.x.toFixed(2) + " " + point.y.toFixed(2))
-        .join(" ");
-
-      const xTicks = Array.from({ length: 5 }, (_, index) => {
-        const value = (maxDays / 4) * index;
+      const xTicks = Array.from({ length: 6 }, (_, index) => {
+        const value = (maxDays / 5) * index;
         const x = margin.left + (value / maxDays) * chartWidth;
         return (
           '<g>' +
@@ -2268,34 +2547,57 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         );
       }).join("");
 
-      const yTicks = svgPoints
-        .map((point) => (
-          '<g>' +
-          '<line x1="' + margin.left + '" y1="' + point.y.toFixed(2) + '" x2="' + (width - margin.right) + '" y2="' + point.y.toFixed(2) + '" stroke="' + chartTheme.grid + '" stroke-dasharray="4 5"></line>' +
-          '<text x="' + (margin.left - 12) + '" y="' + (point.y + 4).toFixed(2) + '" text-anchor="end" font-size="11" font-weight="700" fill="' + chartTheme.text + '">' + escapeHtml(formatFlatTimeSectionSize(point.sectionSize)) + "</text>" +
-          "</g>"
-        ))
+      const yTicks = sectionOrder
+        .map((sectionSize, index) => {
+          const y = margin.top + (index / Math.max(maxDepth - 1, 1)) * chartHeight;
+          return (
+            '<g>' +
+            '<line x1="' + margin.left + '" y1="' + y.toFixed(2) + '" x2="' + (width - margin.right) + '" y2="' + y.toFixed(2) + '" stroke="' + chartTheme.grid + '" stroke-dasharray="4 5"></line>' +
+            '<text x="' + (margin.left - 12) + '" y="' + (y + 4).toFixed(2) + '" text-anchor="end" font-size="11" font-weight="700" fill="' + chartTheme.text + '">' + escapeHtml(formatFlatTimeSectionSize(sectionSize)) + "</text>" +
+            '</g>'
+          );
+        })
         .join("");
 
-      const markers = svgPoints
-        .map((point) => (
-          '<g>' +
-          '<circle cx="' + point.x.toFixed(2) + '" cy="' + point.y.toFixed(2) + '" r="5" fill="#1264d6"></circle>' +
-          '<text x="' + (point.x + 8).toFixed(2) + '" y="' + (point.y - 8).toFixed(2) + '" font-size="11" font-weight="700" fill="' + chartTheme.pointLabel + '">' + escapeHtml(formatNumber(point.cumulativeDays) + " d") + "</text>" +
-          "</g>"
+      const lineSvg = scaledSeries
+        .map((line) => {
+          const path = line.points.map((point, index) => (index === 0 ? "M" : "L") + point.x.toFixed(2) + " " + point.y.toFixed(2)).join(" ");
+          const endPoint = line.points[line.points.length - 1];
+          const labelX = Math.min(width - margin.right + 4, endPoint.x + 10);
+          const pointsSvg = line.points
+            .map((point) => (
+              '<circle cx="' + point.x.toFixed(2) + '" cy="' + point.y.toFixed(2) + '" r="' + (line.isIdeal ? "4.5" : "3.5") + '" fill="' + line.color + '" opacity="' + (line.isIdeal ? "1" : "0.85") + '"></circle>'
+            ))
+            .join("");
+          return (
+            '<g>' +
+            '<path d="' + path + '" fill="none" stroke="' + line.color + '" stroke-width="' + (line.isIdeal ? "4.5" : "2.5") + '" stroke-linecap="round" stroke-linejoin="round" opacity="' + (line.isIdeal ? "1" : "0.9") + '"></path>' +
+            pointsSvg +
+            '<text x="' + labelX.toFixed(2) + '" y="' + (endPoint.y + (line.isIdeal ? -10 : 10)).toFixed(2) + '" font-size="11" font-weight="700" fill="' + chartTheme.pointLabel + '">' + escapeHtml(line.label + " • " + formatNumber(endPoint.cumulativeDays) + " d") + '</text>' +
+            '</g>'
+          );
+        })
+        .join("");
+
+      const legend = series
+        .map((line) => (
+          '<span class="legend-item" style="margin-right:12px;">' +
+          '<span class="legend-dot" style="background:' + line.color + '; width:14px; height:14px;"></span>' +
+          escapeHtml(line.label) +
+          '</span>'
         ))
         .join("");
 
       target.innerHTML =
+        '<div class="legend" style="margin-bottom:12px; flex-wrap:wrap;">' + legend + '</div>' +
         '<div class="column-chart-wrap">' +
-        '<svg class="column-chart-svg" viewBox="0 0 ' + width + " " + height + '" role="img" aria-label="Perfect flat time chart">' +
+        '<svg class="column-chart-svg" viewBox="0 0 ' + width + " " + height + '" role="img" aria-label="Perfect flat time compared with wells">' +
         xTicks +
         yTicks +
         '<line x1="' + margin.left + '" y1="' + margin.top + '" x2="' + margin.left + '" y2="' + (height - margin.bottom) + '" stroke="' + chartTheme.axis + '"></line>' +
         '<line x1="' + margin.left + '" y1="' + (height - margin.bottom) + '" x2="' + (width - margin.right) + '" y2="' + (height - margin.bottom) + '" stroke="' + chartTheme.axis + '"></line>' +
-        '<path d="' + path + '" fill="none" stroke="#1264d6" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></path>' +
-        markers +
-        '<text x="' + (margin.left + chartWidth / 2).toFixed(2) + '" y="' + (height - 4) + '" text-anchor="middle" font-size="12" font-weight="700" fill="' + chartTheme.text + '">Days</text>' +
+        lineSvg +
+        '<text x="' + (margin.left + chartWidth / 2).toFixed(2) + '" y="' + (height - 6) + '" text-anchor="middle" font-size="12" font-weight="700" fill="' + chartTheme.text + '">Days</text>' +
         '<text x="18" y="' + (margin.top + chartHeight / 2).toFixed(2) + '" text-anchor="middle" font-size="12" font-weight="700" fill="' + chartTheme.text + '" transform="rotate(-90 18 ' + (margin.top + chartHeight / 2).toFixed(2) + ')">Depth / Section Progression</text>' +
         "</svg>" +
         "</div>";
@@ -2602,6 +2904,31 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .join("");
 
       target.innerHTML = '<div class="table-wrap"><table><thead><tr>' + headerHtml + "</tr></thead><tbody>" + bodyHtml + "</tbody></table></div>";
+    }
+
+    function renderTableHtml(target, headers, rows) {
+      if (!rows.length) {
+        target.innerHTML = '<div class="empty">No rows available for the selected filters.</div>';
+        return;
+      }
+
+      const headerHtml = headers.map((header) => "<th>" + escapeHtml(header) + "</th>").join("");
+      const bodyHtml = rows
+        .map((row) => {
+          return "<tr>" + row.map((cell) => "<td>" + cell + "</td>").join("") + "</tr>";
+        })
+        .join("");
+
+      target.innerHTML = '<div class="table-wrap"><table><thead><tr>' + headerHtml + "</tr></thead><tbody>" + bodyHtml + "</tbody></table></div>";
+    }
+
+    function confidenceBadgeHtml(confidence) {
+      const tone = String(confidence || "low").trim().toLowerCase();
+      return '<span class="confidence-badge ' + escapeHtml(tone) + '">' + escapeHtml(confidence || "Low") + '</span>';
+    }
+
+    function flatTimeActionButtonHtml(type, value, label) {
+      return '<button type="button" class="table-action" data-flat-focus-' + escapeHtml(type) + '="' + escapeHtml(value) + '">' + escapeHtml(label) + '</button>';
     }
 
     function isYesLike(value) {
@@ -3168,9 +3495,42 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .sort((left, right) => right.total - left.total || left.label.localeCompare(right.label));
     }
 
+    function percentile(numbers, ratio) {
+      const values = numbers.filter((value) => Number.isFinite(value)).slice().sort((left, right) => left - right);
+      if (!values.length) return 0;
+      if (values.length === 1) return values[0];
+      const position = (values.length - 1) * ratio;
+      const lower = Math.floor(position);
+      const upper = Math.ceil(position);
+      if (lower === upper) return values[lower];
+      const weight = position - lower;
+      return values[lower] * (1 - weight) + values[upper] * weight;
+    }
+
+    function standardDeviation(numbers) {
+      const values = numbers.filter((value) => Number.isFinite(value));
+      if (values.length <= 1) return 0;
+      const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+      const variance = values.reduce((sum, value) => sum + Math.pow(value - mean, 2), 0) / values.length;
+      return Math.sqrt(variance);
+    }
+
+    function flatTimeConfidence(sampleSize, cv) {
+      if (sampleSize >= 5 && cv <= 0.2) return "High";
+      if (sampleSize >= 3 && cv <= 0.35) return "Medium";
+      return "Low";
+    }
+
+    function flatTimeVariabilityLabel(cv) {
+      if (cv <= 0.2) return "Low";
+      if (cv <= 0.35) return "Moderate";
+      return "High";
+    }
+
     function computeFlatTimeOpportunity(item, datasets) {
       const ranked = datasets
         .map((dataset) => ({
+          datasetId: dataset.id,
           label: dataset.subjectWell,
           rigLabel: dataset.rigLabel || "Rig not mapped",
           value: Number(item[dataset.id] || 0),
@@ -3185,12 +3545,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const peerValues = ranked.slice(1).map((entry) => entry.value).filter((value) => value > 0);
       const peerAverage = peerValues.length ? average(peerValues) : 0;
       const fastestTime = occurrenceCount ? Math.min(...values) : 0;
+      const p25Value = percentile(values, 0.25);
       const sortedValues = values.slice().sort((left, right) => left - right);
       const medianValue = occurrenceCount
         ? (occurrenceCount % 2
             ? sortedValues[(occurrenceCount - 1) / 2]
             : (sortedValues[occurrenceCount / 2 - 1] + sortedValues[occurrenceCount / 2]) / 2)
         : 0;
+      const stdDev = standardDeviation(values);
+      const cv = meanValue > 0 ? stdDev / meanValue : 0;
 
       let idealTime = fastestTime;
       let idealRule = "fastest";
@@ -3199,17 +3562,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         const meanGapRatio = meanValue > 0 ? Math.abs(meanValue - fastestTime) / meanValue : 0;
         const medianGapRatio = medianValue > 0 ? Math.abs(medianValue - fastestTime) / medianValue : 0;
         if (meanGapRatio > 0.35 || medianGapRatio > 0.35) {
-          idealTime = Math.min(meanValue || Infinity, medianValue || Infinity);
-          idealRule = "stable central tendency";
+          idealTime = Math.min(
+            ...[p25Value, medianValue, meanValue].filter((value) => Number.isFinite(value) && value > 0)
+          );
+          idealRule = "stable benchmark";
         }
       }
 
       if (!Number.isFinite(idealTime) || idealTime <= 0) {
-        idealTime = fastestTime || meanValue || medianValue || 0;
+        idealTime = fastestTime || p25Value || meanValue || medianValue || 0;
       }
 
       const gapToIdeal = Math.max(topEntry.value - idealTime, 0);
       const gapVsPeerAverage = peerAverage > 0 ? Math.max(topEntry.value - peerAverage, 0) : 0;
+      const totalRecoverableHours = ranked.reduce((sum, entry) => sum + Math.max(entry.value - idealTime, 0), 0);
+      const confidence = flatTimeConfidence(occurrenceCount, cv);
+      const variability = flatTimeVariabilityLabel(cv);
 
       return {
         sectionSize: item.sectionSize || "__no_section__",
@@ -3219,20 +3587,548 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         averagePerWell: occurrenceCount ? item.total / occurrenceCount : 0,
         peerAverage,
         meanValue,
+        p25Value,
         medianValue,
+        stdDev,
+        cv,
         fastestTime,
         idealTime,
         idealRule,
         gapToIdeal,
         gapVsPeerAverage,
+        totalRecoverableHours,
+        confidence,
+        variability,
         topEntry,
         occurrenceCount,
         values,
+        ranked,
         summaryText:
           occurrenceCount >= 2
             ? occurrenceCount + " wells; peers avg " + formatNumber(peerAverage || meanValue || 0) + " hr, top well " + topEntry.label + " ran " + formatNumber(topEntry.value) + " hr"
             : "Only one well observed for this activity",
       };
+    }
+
+    function buildWellRanking(datasets, opportunities) {
+      return datasets
+        .map((dataset) => {
+          let actualTotal = 0;
+          let idealTotal = 0;
+          let excessTotal = 0;
+          const drivers = [];
+
+          opportunities.forEach((opportunity) => {
+            const actual = Number(opportunity.ranked.find((entry) => entry.datasetId === dataset.id)?.value || 0);
+            if (!actual) return;
+            actualTotal += actual;
+            idealTotal += opportunity.idealTime;
+            const gap = Math.max(actual - opportunity.idealTime, 0);
+            excessTotal += gap;
+            if (gap > 0) {
+              drivers.push({
+                activity: opportunity.activityLabel,
+                group: opportunity.groupLabel,
+                gap,
+              });
+            }
+          });
+
+          drivers.sort((left, right) => right.gap - left.gap || left.activity.localeCompare(right.activity));
+
+          return {
+            rigLabel: dataset.rigLabel || "Rig not mapped",
+            wellLabel: dataset.subjectWell,
+            actualTotal,
+            idealTotal,
+            excessTotal,
+            topDriver: drivers[0] || null,
+            topDrivers: drivers.slice(0, 3),
+          };
+        })
+        .sort((left, right) => right.excessTotal - left.excessTotal || right.actualTotal - left.actualTotal || left.wellLabel.localeCompare(right.wellLabel));
+    }
+
+    function buildSectionBenchmarkItems(datasets, metricKey, opportunities) {
+      const sectionMap = new Map();
+      datasets.forEach((dataset) => {
+        const totalsBySection = new Map();
+        dataset.groups.forEach((group) => {
+          group.activities.forEach((activity) => {
+            const sectionSize = activity.sectionSize || extractFlatTimeSectionSize(activity.activity);
+            if (!sectionSize || sectionSize === "__no_section__") return;
+            if (!sectionMap.has(sectionSize)) sectionMap.set(sectionSize, { values: [], ideal: 0 });
+            totalsBySection.set(sectionSize, (totalsBySection.get(sectionSize) || 0) + Number(activity[metricKey] || 0));
+          });
+        });
+        totalsBySection.forEach((value, sectionSize) => {
+          sectionMap.get(sectionSize).values.push(value);
+        });
+      });
+
+      opportunities.forEach((opportunity) => {
+        const sectionSize = opportunity.sectionSize;
+        if (!sectionSize || sectionSize === "__no_section__") return;
+        if (!sectionMap.has(sectionSize)) sectionMap.set(sectionSize, { values: [], ideal: 0 });
+        sectionMap.get(sectionSize).ideal += Number(opportunity.idealTime || 0);
+      });
+
+      return Array.from(sectionMap.entries())
+        .map(([sectionSize, bucket]) => {
+          const actualAverage = average(bucket.values);
+          const idealTime = Number(bucket.ideal || 0);
+          return {
+            label: formatFlatTimeSectionSize(sectionSize),
+            sectionSize,
+            actualAverage,
+            idealTime,
+            spread: Math.max(actualAverage - idealTime, 0),
+          };
+        })
+        .sort((left, right) => Number(right.sectionSize) - Number(left.sectionSize) || left.label.localeCompare(right.label));
+    }
+
+    function buildRigBenchmarkSummary(datasets, opportunities) {
+      const rigMap = new Map();
+
+      datasets.forEach((dataset) => {
+        const rigLabel = dataset.rigLabel || "Rig not mapped";
+        if (!rigMap.has(rigLabel)) {
+          rigMap.set(rigLabel, {
+            rigLabel,
+            datasets: [],
+            gapByActivity: new Map(),
+          });
+        }
+        rigMap.get(rigLabel).datasets.push(dataset);
+      });
+
+      return Array.from(rigMap.values())
+        .map((bucket) => {
+          let actualTotal = 0;
+          let idealTotal = 0;
+          let excessTotal = 0;
+          opportunities.forEach((opportunity) => {
+            bucket.datasets.forEach((dataset) => {
+              const actual = Number(opportunity.ranked.find((entry) => entry.datasetId === dataset.id)?.value || 0);
+              if (!actual) return;
+              actualTotal += actual;
+              idealTotal += opportunity.idealTime;
+              const gap = Math.max(actual - opportunity.idealTime, 0);
+              excessTotal += gap;
+              if (gap > 0) {
+                bucket.gapByActivity.set(
+                  opportunity.activityLabel,
+                  (bucket.gapByActivity.get(opportunity.activityLabel) || 0) + gap
+                );
+              }
+            });
+          });
+
+          const mainRepeatingActivity = Array.from(bucket.gapByActivity.entries())
+            .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))[0];
+
+          return {
+            rigLabel: bucket.rigLabel,
+            wellCount: bucket.datasets.length,
+            averageFlatTime: bucket.datasets.length ? actualTotal / bucket.datasets.length : 0,
+            averageIdealTime: bucket.datasets.length ? idealTotal / bucket.datasets.length : 0,
+            excessTime: excessTotal,
+            mainRepeatingActivity: mainRepeatingActivity ? mainRepeatingActivity[0] : "No repeated excess",
+          };
+        })
+        .sort((left, right) => right.excessTime - left.excessTime || right.averageFlatTime - left.averageFlatTime || left.rigLabel.localeCompare(right.rigLabel));
+    }
+
+    function buildOpportunityPipeline(opportunities) {
+      return opportunities
+        .map((opportunity) => {
+          const wellsImpacted = opportunity.ranked.filter((entry) => entry.value > opportunity.idealTime).length;
+          let priority = "Monitor";
+          if (opportunity.totalRecoverableHours >= 40 && opportunity.confidence === "High") priority = "Act now";
+          else if (opportunity.totalRecoverableHours >= 20 || opportunity.confidence === "Medium") priority = "Next wave";
+
+          return {
+            activityLabel: opportunity.activityLabel,
+            groupLabel: opportunity.groupLabel,
+            occurrenceCount: opportunity.occurrenceCount,
+            wellsImpacted,
+            idealTime: opportunity.idealTime,
+            totalRecoverableHours: opportunity.totalRecoverableHours,
+            priority,
+          };
+        })
+        .sort((left, right) => right.totalRecoverableHours - left.totalRecoverableHours || right.wellsImpacted - left.wellsImpacted || left.activityLabel.localeCompare(right.activityLabel));
+    }
+
+    function renderWaterfallChart(target, dataset, opportunities) {
+      if (!dataset || !opportunities.length) {
+        target.innerHTML = '<div class="empty">Choose a well to draw the waterfall.</div>';
+        return;
+      }
+
+      const chartTheme = getChartTheme();
+      const contributions = opportunities
+        .map((opportunity) => {
+          const actual = Number(opportunity.ranked.find((entry) => entry.datasetId === dataset.id)?.value || 0);
+          return {
+            label: opportunity.activityLabel,
+            gap: Math.max(actual - opportunity.idealTime, 0),
+          };
+        })
+        .filter((item) => item.gap > 0)
+        .sort((left, right) => right.gap - left.gap || left.label.localeCompare(right.label));
+
+      const topDrivers = contributions.slice(0, 5);
+      const otherGap = contributions.slice(5).reduce((sum, item) => sum + item.gap, 0);
+      if (otherGap > 0) topDrivers.push({ label: "Other gaps", gap: otherGap });
+
+      const actualTotal = topDrivers.reduce((sum, item) => sum + item.gap, 0) + opportunities.reduce((sum, opportunity) => {
+        const actual = Number(opportunity.ranked.find((entry) => entry.datasetId === dataset.id)?.value || 0);
+        return sum + Math.min(actual, opportunity.idealTime || 0);
+      }, 0);
+      const idealTotal = Math.max(actualTotal - topDrivers.reduce((sum, item) => sum + item.gap, 0), 0);
+
+      const steps = [{ label: "Actual total", start: 0, end: actualTotal, type: "total" }];
+      let running = actualTotal;
+      topDrivers.forEach((driver) => {
+        steps.push({ label: driver.label, start: running, end: running - driver.gap, type: "delta", delta: -driver.gap });
+        running -= driver.gap;
+      });
+      steps.push({ label: "Ideal total", start: 0, end: idealTotal, type: "total-ideal" });
+
+      const maxValue = niceMax(Math.max(...steps.map((step) => Math.max(step.start, step.end)), 1));
+      const width = Math.max(780, steps.length * 120);
+      const height = 360;
+      const margin = { top: 24, right: 24, bottom: 86, left: 56 };
+      const chartWidth = width - margin.left - margin.right;
+      const chartHeight = height - margin.top - margin.bottom;
+      const barWidth = Math.min(78, chartWidth / steps.length - 18);
+
+      const grid = Array.from({ length: 5 }, (_, index) => {
+        const value = (maxValue / 4) * index;
+        const y = margin.top + chartHeight - (value / maxValue) * chartHeight;
+        return (
+          '<g>' +
+          '<line x1="' + margin.left + '" y1="' + y.toFixed(2) + '" x2="' + (width - margin.right) + '" y2="' + y.toFixed(2) + '" stroke="' + chartTheme.grid + '" stroke-dasharray="4 5"></line>' +
+          '<text x="' + (margin.left - 10) + '" y="' + (y + 4).toFixed(2) + '" text-anchor="end" font-size="11" fill="' + chartTheme.valueLabel + '">' + escapeHtml(formatNumber(value)) + '</text>' +
+          '</g>'
+        );
+      }).join("");
+
+      const bars = steps.map((step, index) => {
+        const x = margin.left + index * (chartWidth / steps.length) + ((chartWidth / steps.length) - barWidth) / 2;
+        const topValue = Math.max(step.start, step.end);
+        const bottomValue = Math.min(step.start, step.end);
+        const y = margin.top + chartHeight - (topValue / maxValue) * chartHeight;
+        const yBottom = margin.top + chartHeight - (bottomValue / maxValue) * chartHeight;
+        const heightValue = Math.max(yBottom - y, 2);
+        const fill = step.type === "delta" ? "#be123c" : step.type === "total-ideal" ? "#0f766e" : "#1264d6";
+        const centerX = x + barWidth / 2;
+        const labelLines = wrapChartLabel(step.label, 16);
+        const labelSvg = labelLines.map((line, lineIndex) => '<tspan x="' + centerX.toFixed(2) + '" dy="' + (lineIndex === 0 ? 0 : 13) + '">' + escapeHtml(line) + '</tspan>').join("");
+        const displayValue = step.type === "delta" ? formatNumber(Math.abs(step.delta || 0)) : formatNumber(step.end);
+        return (
+          '<g>' +
+          '<rect x="' + x.toFixed(2) + '" y="' + y.toFixed(2) + '" width="' + barWidth.toFixed(2) + '" height="' + heightValue.toFixed(2) + '" rx="10" fill="' + fill + '"></rect>' +
+          '<text x="' + centerX.toFixed(2) + '" y="' + Math.max(margin.top + 12, y - 8).toFixed(2) + '" text-anchor="middle" font-size="11" font-weight="700" fill="' + chartTheme.pointLabel + '">' + escapeHtml(displayValue) + '</text>' +
+          '<text x="' + centerX.toFixed(2) + '" y="' + (height - 42) + '" text-anchor="middle" font-size="11" font-weight="700" fill="' + chartTheme.text + '">' + labelSvg + '</text>' +
+          '</g>'
+        );
+      }).join("");
+
+      target.innerHTML =
+        '<div class="legend" style="margin-bottom:10px;">' +
+        '<span class="legend-item"><span class="legend-dot" style="background:#1264d6;"></span>' + escapeHtml(dataset.subjectWell + " actual") + '</span>' +
+        '<span class="legend-item"><span class="legend-dot" style="background:#be123c;"></span>Recoverable gap</span>' +
+        '<span class="legend-item"><span class="legend-dot" style="background:#0f766e;"></span>Recommended ideal</span>' +
+        '</div>' +
+        '<div class="column-chart-wrap">' +
+        '<svg class="column-chart-svg" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Well versus ideal waterfall chart">' +
+        grid +
+        bars +
+        '<line x1="' + margin.left + '" y1="' + (margin.top + chartHeight).toFixed(2) + '" x2="' + (width - margin.right) + '" y2="' + (margin.top + chartHeight).toFixed(2) + '" stroke="' + chartTheme.axis + '"></line>' +
+        '</svg></div>';
+    }
+
+    function renderVariabilityChart(target, opportunities, topN) {
+      const items = opportunities
+        .filter((opportunity) => opportunity.occurrenceCount >= 2)
+        .slice()
+        .sort((left, right) => right.cv - left.cv || right.totalTime - left.totalTime)
+        .slice(0, topN);
+
+      if (!items.length) {
+        target.innerHTML = '<div class="empty">Need at least two wells per activity to show variability.</div>';
+        return;
+      }
+
+      const chartTheme = getChartTheme();
+      const width = 920;
+      const height = Math.max(340, items.length * 48 + 70);
+      const margin = { top: 26, right: 28, bottom: 34, left: 190 };
+      const chartWidth = width - margin.left - margin.right;
+      const chartHeight = height - margin.top - margin.bottom;
+      const maxValue = niceMax(Math.max(...items.map((item) => Math.max(...item.values, item.idealTime)), 1));
+      const rowHeight = chartHeight / items.length;
+
+      const grid = Array.from({ length: 6 }, (_, index) => {
+        const value = (maxValue / 5) * index;
+        const x = margin.left + (value / maxValue) * chartWidth;
+        return (
+          '<g>' +
+          '<line x1="' + x.toFixed(2) + '" y1="' + margin.top + '" x2="' + x.toFixed(2) + '" y2="' + (height - margin.bottom) + '" stroke="' + chartTheme.grid + '" stroke-dasharray="4 5"></line>' +
+          '<text x="' + x.toFixed(2) + '" y="' + (height - 10) + '" text-anchor="middle" font-size="11" fill="' + chartTheme.valueLabel + '">' + escapeHtml(formatNumber(value)) + '</text>' +
+          '</g>'
+        );
+      }).join("");
+
+      const rows = items.map((item, index) => {
+        const y = margin.top + index * rowHeight + rowHeight / 2;
+        const minValue = Math.min(...item.values);
+        const maxObserved = Math.max(...item.values);
+        const q1 = percentile(item.values, 0.25);
+        const q3 = percentile(item.values, 0.75);
+        const xMin = margin.left + (minValue / maxValue) * chartWidth;
+        const xQ1 = margin.left + (q1 / maxValue) * chartWidth;
+        const xMedian = margin.left + (item.medianValue / maxValue) * chartWidth;
+        const xQ3 = margin.left + (q3 / maxValue) * chartWidth;
+        const xMax = margin.left + (maxObserved / maxValue) * chartWidth;
+        const xIdeal = margin.left + (item.idealTime / maxValue) * chartWidth;
+        return (
+          '<g>' +
+          '<line x1="' + xMin.toFixed(2) + '" y1="' + y.toFixed(2) + '" x2="' + xMax.toFixed(2) + '" y2="' + y.toFixed(2) + '" stroke="' + chartTheme.axis + '" stroke-width="2"></line>' +
+          '<rect x="' + xQ1.toFixed(2) + '" y="' + (y - 10).toFixed(2) + '" width="' + Math.max(xQ3 - xQ1, 2).toFixed(2) + '" height="20" rx="8" fill="rgba(18, 100, 214, 0.25)" stroke="#1264d6"></rect>' +
+          '<line x1="' + xMedian.toFixed(2) + '" y1="' + (y - 12).toFixed(2) + '" x2="' + xMedian.toFixed(2) + '" y2="' + (y + 12).toFixed(2) + '" stroke="#1264d6" stroke-width="3"></line>' +
+          '<circle cx="' + xIdeal.toFixed(2) + '" cy="' + y.toFixed(2) + '" r="5" fill="#c06a0a"></circle>' +
+          '<text x="' + (margin.left - 12) + '" y="' + (y + 4).toFixed(2) + '" text-anchor="end" font-size="11" font-weight="700" fill="' + chartTheme.text + '">' + escapeHtml(item.activityLabel) + '</text>' +
+          '</g>'
+        );
+      }).join("");
+
+      target.innerHTML =
+        '<div class="legend" style="margin-bottom:10px;">' +
+        '<span class="legend-item"><span class="legend-dot" style="background:#1264d6;"></span>Interquartile range / median</span>' +
+        '<span class="legend-item"><span class="legend-dot" style="background:#c06a0a;"></span>Recommended ideal</span>' +
+        '</div>' +
+        '<div class="column-chart-wrap">' +
+        '<svg class="column-chart-svg" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Variability box plot chart">' +
+        grid +
+        rows +
+        '</svg></div>';
+    }
+
+    function wireFlatTimeFocusActions() {
+      Array.from(document.querySelectorAll("[data-flat-focus-well]")).forEach((button) => {
+        button.addEventListener("click", () => {
+          flatTimeState.focusWell = button.dataset.flatFocusWell || "";
+          renderFlatTime();
+        });
+      });
+
+      Array.from(document.querySelectorAll("[data-flat-focus-activity]")).forEach((button) => {
+        button.addEventListener("click", () => {
+          flatTimeState.focusActivity = button.dataset.flatFocusActivity || "";
+          renderFlatTime();
+        });
+      });
+    }
+
+    function renderFlatTimeDrilldown(datasets, opportunities, selectedWell, selectedActivity) {
+      const selectedDataset = datasets.find((dataset) => dataset.subjectWell === selectedWell) || datasets[0];
+      const selectedOpportunity = opportunities.find((opportunity) => opportunity.activityLabel === selectedActivity) || opportunities[0];
+
+      if (!selectedDataset || !selectedOpportunity) {
+        ui.flatTimeWellDrilldown.innerHTML = '<div class="empty">Select more CSVs to unlock the drill-down.</div>';
+        ui.flatTimeActivityDrilldown.innerHTML = '<div class="empty">Select more CSVs to unlock the activity benchmark.</div>';
+        return;
+      }
+
+      const wellDrivers = opportunities
+        .map((opportunity) => {
+          const actual = Number(opportunity.ranked.find((entry) => entry.datasetId === selectedDataset.id)?.value || 0);
+          const gap = Math.max(actual - opportunity.idealTime, 0);
+          return {
+            activityLabel: opportunity.activityLabel,
+            groupLabel: opportunity.groupLabel,
+            actual,
+            idealTime: opportunity.idealTime,
+            gap,
+            peerAverage: opportunity.peerAverage || opportunity.meanValue || 0,
+          };
+        })
+        .filter((item) => item.actual > 0)
+        .sort((left, right) => right.gap - left.gap || right.actual - left.actual || left.activityLabel.localeCompare(right.activityLabel))
+        .slice(0, 6);
+
+      const wellActualTotal = wellDrivers.reduce((sum, item) => sum + item.actual, 0);
+      const wellIdealTotal = wellDrivers.reduce((sum, item) => sum + item.idealTime, 0);
+      const wellExcess = wellDrivers.reduce((sum, item) => sum + item.gap, 0);
+
+      ui.flatTimeWellDrilldown.innerHTML =
+        '<div class="metric-strip" style="margin-bottom:14px;">' +
+        '<div class="metric-pill"><div class="label">Selected Well</div><div class="value"><span class="value-main">' + escapeHtml(selectedDataset.subjectWell) + '</span></div><div class="meta">' + escapeHtml(selectedDataset.rigLabel || "Rig not mapped") + '</div></div>' +
+        '<div class="metric-pill"><div class="label">Actual Flat Time</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(wellActualTotal)) + '</span><span class="value-suffix">hr</span></div><div class="meta">Across top tracked drivers</div></div>' +
+        '<div class="metric-pill"><div class="label">Ideal Flat Time</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(wellIdealTotal)) + '</span><span class="value-suffix">hr</span></div><div class="meta">Recommended achievable target</div></div>' +
+        '<div class="metric-pill"><div class="label">Recoverable Gap</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(wellExcess)) + '</span><span class="value-suffix">hr</span></div><div class="meta">Time above the recommended ideal</div></div>' +
+        '</div>' +
+        '<div class="drill-list">' +
+        wellDrivers.map((item) =>
+          '<div class="drill-item">' +
+          '<strong>' + flatTimeActionButtonHtml("activity", item.activityLabel, item.activityLabel) + '</strong>' +
+          '<span>' + escapeHtml(item.groupLabel + " • actual " + formatNumber(item.actual) + " hr • peers avg " + formatNumber(item.peerAverage) + " hr • ideal " + formatNumber(item.idealTime) + " hr • gap " + formatNumber(item.gap) + " hr") + '</span>' +
+          '</div>'
+        ).join('') +
+        '</div>';
+
+      const peerRows = selectedOpportunity.ranked
+        .slice()
+        .sort((left, right) => right.value - left.value || left.label.localeCompare(right.label))
+        .map((entry) => ({
+          rigLabel: entry.rigLabel || "Rig not mapped",
+          label: entry.label,
+          value: entry.value,
+          gap: Math.max(entry.value - selectedOpportunity.idealTime, 0),
+        }));
+
+      ui.flatTimeActivityDrilldown.innerHTML =
+        '<div class="metric-strip" style="margin-bottom:14px;">' +
+        '<div class="metric-pill"><div class="label">Selected Activity</div><div class="value"><span class="value-main">' + escapeHtml(selectedOpportunity.activityLabel) + '</span></div><div class="meta">' + escapeHtml(selectedOpportunity.groupLabel + " • " + formatFlatTimeSectionSize(selectedOpportunity.sectionSize)) + '</div></div>' +
+        '<div class="metric-pill"><div class="label">Recommended Ideal</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(selectedOpportunity.idealTime)) + '</span><span class="value-suffix">hr</span></div><div class="meta">' + escapeHtml(selectedOpportunity.idealRule) + '</div></div>' +
+        '<div class="metric-pill"><div class="label">Confidence</div><div class="value">' + confidenceBadgeHtml(selectedOpportunity.confidence) + '</div><div class="meta">' + escapeHtml(selectedOpportunity.variability + " variability • sample " + selectedOpportunity.occurrenceCount) + '</div></div>' +
+        '<div class="metric-pill"><div class="label">Observed Range</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(selectedOpportunity.fastestTime)) + " - " + escapeHtml(formatNumber(Math.max(...selectedOpportunity.values, 0))) + '</span><span class="value-suffix">hr</span></div><div class="meta">Fastest to slowest observed execution</div></div>' +
+        '</div>' +
+        '<div class="table-wrap"><table><thead><tr><th>Rig</th><th>Well</th><th>Observed Time (hr)</th><th>Gap vs Ideal (hr)</th></tr></thead><tbody>' +
+        peerRows.map((row) =>
+          '<tr>' +
+          '<td>' + escapeHtml(row.rigLabel) + '</td>' +
+          '<td>' + flatTimeActionButtonHtml("well", row.label, row.label) + '</td>' +
+          '<td>' + escapeHtml(formatNumber(row.value)) + '</td>' +
+          '<td>' + escapeHtml(formatNumber(row.gap)) + '</td>' +
+          '</tr>'
+        ).join('') +
+        '</tbody></table></div>';
+
+      ui.flatTimeDrilldownNote.textContent =
+        'Selected well: ' + selectedDataset.subjectWell + ' • selected activity: ' + selectedOpportunity.activityLabel + '. ' +
+        'Depth-based drill-down is still limited because the uploaded CSVs do not contain true depth fields such as section top/bottom, measured depth or TD.';
+    }
+
+    function renderParetoChart(target, opportunities) {
+      if (!opportunities.length) {
+        target.innerHTML = '<div class="empty">No recoverable-hour opportunities available.</div>';
+        return;
+      }
+
+      const items = opportunities
+        .slice()
+        .sort((left, right) => right.totalRecoverableHours - left.totalRecoverableHours)
+        .slice(0, 10);
+      const totalRecoverable = items.reduce((sum, item) => sum + item.totalRecoverableHours, 0) || 1;
+      const chartTheme = getChartTheme();
+      const width = Math.max(820, items.length * 120);
+      const height = 360;
+      const margin = { top: 24, right: 40, bottom: 86, left: 52 };
+      const chartWidth = width - margin.left - margin.right;
+      const chartHeight = height - margin.top - margin.bottom;
+      const maxBar = niceMax(Math.max(...items.map((item) => item.totalRecoverableHours), 1));
+      const groupWidth = chartWidth / items.length;
+      let cumulative = 0;
+      const points = [];
+
+      const grid = Array.from({ length: 5 }, (_, index) => {
+        const value = (maxBar / 4) * index;
+        const y = margin.top + chartHeight - (value / maxBar) * chartHeight;
+        return (
+          '<g>' +
+          '<line x1="' + margin.left + '" y1="' + y.toFixed(2) + '" x2="' + (width - margin.right) + '" y2="' + y.toFixed(2) + '" stroke="' + chartTheme.grid + '" stroke-dasharray="4 5"></line>' +
+          '<text x="' + (margin.left - 10) + '" y="' + (y + 4).toFixed(2) + '" text-anchor="end" font-size="11" fill="' + chartTheme.valueLabel + '">' + escapeHtml(formatNumber(value)) + "</text>" +
+          "</g>"
+        );
+      }).join("");
+
+      const bars = items.map((item, index) => {
+        const x = margin.left + index * groupWidth + groupWidth * 0.18;
+        const barWidth = groupWidth * 0.64;
+        const barHeight = (item.totalRecoverableHours / maxBar) * chartHeight;
+        const y = margin.top + chartHeight - barHeight;
+        cumulative += item.totalRecoverableHours;
+        const cumulativePct = (cumulative / totalRecoverable) * 100;
+        const pointX = x + barWidth / 2;
+        const pointY = margin.top + chartHeight - (cumulativePct / 100) * chartHeight;
+        points.push({ x: pointX, y: pointY, pct: cumulativePct });
+        const labelLines = wrapChartLabel(item.activityLabel, 16);
+        const labelSvg = labelLines
+          .map((line, lineIndex) => '<tspan x="' + pointX.toFixed(2) + '" dy="' + (lineIndex === 0 ? 0 : 13) + '">' + escapeHtml(line) + "</tspan>")
+          .join("");
+        return (
+          '<g>' +
+          '<rect x="' + x.toFixed(2) + '" y="' + y.toFixed(2) + '" width="' + barWidth.toFixed(2) + '" height="' + Math.max(barHeight, 2).toFixed(2) + '" rx="10" fill="#1264d6"></rect>' +
+          '<text x="' + pointX.toFixed(2) + '" y="' + Math.max(margin.top + 12, y - 8).toFixed(2) + '" text-anchor="middle" font-size="11" font-weight="700" fill="' + chartTheme.pointLabel + '">' + escapeHtml(formatNumber(item.totalRecoverableHours)) + "</text>" +
+          '<text x="' + pointX.toFixed(2) + '" y="' + (height - 42) + '" text-anchor="middle" font-size="11" font-weight="700" fill="' + chartTheme.text + '">' + labelSvg + "</text>" +
+          "</g>"
+        );
+      }).join("");
+
+      const linePath = points.map((point, index) => (index === 0 ? "M" : "L") + point.x.toFixed(2) + " " + point.y.toFixed(2)).join(" ");
+      const lineDots = points
+        .map((point) => (
+          '<g>' +
+          '<circle cx="' + point.x.toFixed(2) + '" cy="' + point.y.toFixed(2) + '" r="4" fill="#c06a0a"></circle>' +
+          '<text x="' + point.x.toFixed(2) + '" y="' + (point.y - 10).toFixed(2) + '" text-anchor="middle" font-size="10" fill="' + chartTheme.pointLabel + '">' + escapeHtml(formatNumber(point.pct) + "%") + "</text>" +
+          '</g>'
+        ))
+        .join("");
+
+      target.innerHTML =
+        '<div class="column-chart-wrap">' +
+        '<svg class="column-chart-svg" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Pareto recoverable hours chart">' +
+        grid +
+        bars +
+        '<path d="' + linePath + '" fill="none" stroke="#c06a0a" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"></path>' +
+        lineDots +
+        '<line x1="' + margin.left + '" y1="' + (margin.top + chartHeight).toFixed(2) + '" x2="' + (width - margin.right) + '" y2="' + (margin.top + chartHeight).toFixed(2) + '" stroke="' + chartTheme.axis + '"></line>' +
+        '</svg></div>';
+    }
+
+    function renderHeatmap(target, datasets, opportunities, topN) {
+      if (!datasets.length || !opportunities.length) {
+        target.innerHTML = '<div class="empty">No heatmap data available.</div>';
+        return;
+      }
+
+      const rows = datasets.slice();
+      const columns = opportunities
+        .slice()
+        .sort((left, right) => right.totalRecoverableHours - left.totalRecoverableHours)
+        .slice(0, Math.max(6, topN));
+      const maxGap = Math.max(
+        ...rows.flatMap((dataset) =>
+          columns.map((opportunity) => {
+            const actual = Number(opportunity.ranked.find((entry) => entry.datasetId === dataset.id)?.value || 0);
+            return Math.max(actual - opportunity.idealTime, 0);
+          })
+        ),
+        0
+      );
+
+      const headerHtml =
+        '<tr><th>Well</th>' +
+        columns.map((column) => '<th title="' + escapeHtml(column.activityLabel) + '">' + escapeHtml(column.activityLabel) + '</th>').join("") +
+        '</tr>';
+      const bodyHtml = rows.map((dataset) => {
+        const cells = columns.map((opportunity) => {
+          const actual = Number(opportunity.ranked.find((entry) => entry.datasetId === dataset.id)?.value || 0);
+          const gap = Math.max(actual - opportunity.idealTime, 0);
+          const opacity = maxGap > 0 ? Math.max(0.12, gap / maxGap) : 0;
+          const bg = gap > 0 ? 'rgba(200, 30, 90, ' + opacity.toFixed(2) + ')' : 'rgba(18, 100, 214, 0.06)';
+          const color = gap > 0.01 ? '#ffffff' : 'var(--ink)';
+          return '<td style="background:' + bg + '; color:' + color + '; font-weight:700; text-align:center;">' + escapeHtml(formatNumber(gap)) + '</td>';
+        }).join("");
+        return '<tr><td><strong>' + escapeHtml(dataset.subjectWell) + '</strong><br><span style="color:var(--muted); font-size:12px;">' + escapeHtml(dataset.rigLabel || '') + '</span></td>' + cells + '</tr>';
+      }).join("");
+
+      target.innerHTML = '<div class="table-wrap"><table><thead>' + headerHtml + '</thead><tbody>' + bodyHtml + '</tbody></table></div>';
     }
 
     function renderFlatTimeDatasetTags(datasets) {
@@ -3277,6 +4173,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const topSpread = opportunities
         .slice()
         .sort((left, right) => right.gapToIdeal - left.gapToIdeal || right.gapVsPeerAverage - left.gapVsPeerAverage)[0];
+      const totalRecoverable = opportunities.reduce((sum, opportunity) => sum + opportunity.totalRecoverableHours, 0);
+      const mostReliableIdeal = opportunities
+        .filter((opportunity) => opportunity.occurrenceCount >= 3)
+        .slice()
+        .sort((left, right) => {
+          const confidenceScore = { High: 3, Medium: 2, Low: 1 };
+          return (
+            (confidenceScore[right.confidence] || 0) - (confidenceScore[left.confidence] || 0) ||
+            left.cv - right.cv ||
+            right.occurrenceCount - left.occurrenceCount
+          );
+        })[0];
       const overallHours = datasets.reduce((sum, dataset) => sum + Number(dataset[totalKey] || 0), 0);
 
       const cards = [
@@ -3288,6 +4196,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           label: "Best Reduction Opportunity",
           value: topSpread ? topSpread.topEntry.rigLabel : "N/A",
           meta: topSpread ? (topSpread.topEntry.label + " • " + topSpread.activityLabel + " • gap " + formatNumber(topSpread.gapToIdeal) + " hr vs ideal") : "Need more than one dataset",
+        },
+        {
+          label: "Total Recoverable Hours",
+          value: formatNumber(totalRecoverable),
+          meta: "Sum of time above the recommended ideal across the comparison set",
+        },
+        {
+          label: "Most Reliable Ideal",
+          value: mostReliableIdeal ? mostReliableIdeal.activityLabel : "N/A",
+          meta: mostReliableIdeal ? (mostReliableIdeal.confidence + " confidence • target " + formatNumber(mostReliableIdeal.idealTime) + " hr") : "Need at least 3 wells for a strong benchmark",
         },
         { label: "Total Compared Time", value: formatNumber(overallHours), meta: metricKey === "subjectHours" ? "Subject well hours" : metricKey === "meanHours" ? "Mean hours" : "Median hours" },
       ];
@@ -3313,16 +4231,31 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       renderFlatTimeDatasetTags(allDatasets);
       populateFlatTimeRigOptions(allDatasets);
+      updateFlatTimeModeVisibility();
 
       if (!allDatasets.length) {
         ui.flatTimeTitle.textContent = "No flat time datasets loaded";
         ui.flatTimeSubtitle.textContent = "Use the CSV uploader to compare benchmark files.";
         ui.flatTimeSummary.innerHTML = '<div class="empty">Upload flat time CSV files to start the comparison.</div>';
+        ui.flatTimeWellRanking.innerHTML = '<div class="empty">Upload flat time CSV files to rank wells by excess time.</div>';
+        ui.flatTimeParetoChart.innerHTML = '<div class="empty">Upload flat time CSV files to build a Pareto of recoverable hours.</div>';
+        ui.flatTimeWaterfallChart.innerHTML = '<div class="empty">Upload flat time CSV files to build the waterfall.</div>';
+        ui.flatTimeSectionBenchmarkChart.innerHTML = '<div class="empty">Upload flat time CSV files to compare sections.</div>';
+        ui.flatTimeRigSummary.innerHTML = '<div class="empty">Upload flat time CSV files to summarize rigs.</div>';
+        ui.flatTimeOpportunityPipeline.innerHTML = '<div class="empty">Upload flat time CSV files to build the opportunity pipeline.</div>';
         ui.flatTimeGroupChart.innerHTML = '<div class="empty">No flat time group data available.</div>';
         ui.flatTimeActivityChart.innerHTML = '<div class="empty">No flat time activity data available.</div>';
+        ui.flatTimeBenchmarkTable.innerHTML = '<div class="empty">No activity benchmark table available.</div>';
+        ui.flatTimeWellDrilldown.innerHTML = '<div class="empty">Upload flat time CSV files to inspect a well.</div>';
+        ui.flatTimeActivityDrilldown.innerHTML = '<div class="empty">Upload flat time CSV files to inspect an activity.</div>';
+        ui.flatTimeDrilldownNote.textContent = "Click a well or activity in the tables above to open the benchmark, peer comparison and ideal-time logic.";
         ui.flatTimeOpportunityTable.innerHTML = '<div class="empty">No flat time comparison table available.</div>';
         ui.flatTimeGroupTable.innerHTML = '<div class="empty">No flat time group table available.</div>';
+        ui.flatTimeLossDrivers.innerHTML = '<div class="empty">Upload flat time CSV files to list top loss drivers by well.</div>';
+        ui.flatTimeVariabilityChart.innerHTML = '<div class="empty">Upload flat time CSV files to show variability.</div>';
+        ui.flatTimeHeatmap.innerHTML = '<div class="empty">No heatmap data available.</div>';
         ui.flatTimePerfectChart.innerHTML = '<div class="empty">Upload flat time CSV files to draw the perfect flat time curve.</div>';
+        populateFlatTimeWellOptions([], "");
         return;
       }
 
@@ -3334,11 +4267,25 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         ui.flatTimeTitle.textContent = "No data for selected section size";
         ui.flatTimeSubtitle.textContent = "Try another rig or section size, or switch back to all sections.";
         ui.flatTimeSummary.innerHTML = '<div class="empty">No benchmark activities match the selected section size.</div>';
+        ui.flatTimeWellRanking.innerHTML = '<div class="empty">No well ranking available for this section size.</div>';
+        ui.flatTimeParetoChart.innerHTML = '<div class="empty">No Pareto data available for this section size.</div>';
+        ui.flatTimeWaterfallChart.innerHTML = '<div class="empty">No waterfall available for this section size.</div>';
+        ui.flatTimeSectionBenchmarkChart.innerHTML = '<div class="empty">No section benchmark available for this section size.</div>';
+        ui.flatTimeRigSummary.innerHTML = '<div class="empty">No rig benchmark summary available for this section size.</div>';
+        ui.flatTimeOpportunityPipeline.innerHTML = '<div class="empty">No opportunity pipeline available for this section size.</div>';
         ui.flatTimeGroupChart.innerHTML = '<div class="empty">No flat time group data available for this section size.</div>';
         ui.flatTimeActivityChart.innerHTML = '<div class="empty">No flat time activity data available for this section size.</div>';
+        ui.flatTimeBenchmarkTable.innerHTML = '<div class="empty">No benchmark table available for this section size.</div>';
+        ui.flatTimeWellDrilldown.innerHTML = '<div class="empty">No well drill-down available for this section size.</div>';
+        ui.flatTimeActivityDrilldown.innerHTML = '<div class="empty">No activity drill-down available for this section size.</div>';
+        ui.flatTimeDrilldownNote.textContent = "Click a well or activity in the tables above to open the benchmark, peer comparison and ideal-time logic.";
         ui.flatTimeOpportunityTable.innerHTML = '<div class="empty">No flat time comparison table available for this section size.</div>';
         ui.flatTimeGroupTable.innerHTML = '<div class="empty">No flat time group table available for this section size.</div>';
+        ui.flatTimeLossDrivers.innerHTML = '<div class="empty">No loss driver ranking available for this section size.</div>';
+        ui.flatTimeVariabilityChart.innerHTML = '<div class="empty">No variability view available for this section size.</div>';
+        ui.flatTimeHeatmap.innerHTML = '<div class="empty">No heatmap data available for this section size.</div>';
         ui.flatTimePerfectChart.innerHTML = '<div class="empty">No section-sized activities available for the perfect flat time curve.</div>';
+        populateFlatTimeWellOptions([], "");
         return;
       }
 
@@ -3369,12 +4316,109 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         groupMinWidth: 180,
       });
 
-      const rankedOpportunities = activityItems
+      const allOpportunities = activityItems
         .map((item) => computeFlatTimeOpportunity(item, datasets))
-        .sort((left, right) => right.gapToIdeal - left.gapToIdeal || right.totalTime - left.totalTime)
-        .slice(0, topN);
+        .sort((left, right) => right.gapToIdeal - left.gapToIdeal || right.totalRecoverableHours - left.totalRecoverableHours || right.totalTime - left.totalTime);
+      const rankedOpportunities = allOpportunities.slice(0, topN);
+      const wellRanking = buildWellRanking(datasets, allOpportunities);
+      const worstWell = wellRanking[0] ? wellRanking[0].wellLabel : "";
+      const topActivityFocus = rankedOpportunities[0] ? rankedOpportunities[0].activityLabel : "";
+      if (!flatTimeState.focusWell || !datasets.some((dataset) => dataset.subjectWell === flatTimeState.focusWell)) {
+        flatTimeState.focusWell = worstWell;
+      }
+      if (!flatTimeState.focusActivity || !allOpportunities.some((item) => item.activityLabel === flatTimeState.focusActivity)) {
+        flatTimeState.focusActivity = topActivityFocus;
+      }
+      populateFlatTimeWellOptions(datasets, flatTimeState.focusWell || worstWell);
+      const selectedWell = ui.flatTimeWell.value || flatTimeState.focusWell || worstWell;
+      const selectedDataset = datasets.find((dataset) => dataset.subjectWell === selectedWell) || datasets[0];
+      const selectedActivity = flatTimeState.focusActivity || topActivityFocus;
+      const sectionBenchmarkItems = buildSectionBenchmarkItems(datasets, metricKey, allOpportunities);
+      const rigBenchmarkRows = buildRigBenchmarkSummary(datasets, allOpportunities);
+      const opportunityPipeline = buildOpportunityPipeline(allOpportunities).slice(0, Math.max(topN, 8));
+
+      renderTableHtml(
+        ui.flatTimeWellRanking,
+        ["Rig", "Well", "Actual Total (hr)", "Ideal Total (hr)", "Excess Time (hr)", "Top Drivers"],
+        wellRanking.map((row) => [
+          escapeHtml(row.rigLabel),
+          flatTimeActionButtonHtml("well", row.wellLabel, row.wellLabel),
+          escapeHtml(formatNumber(row.actualTotal)),
+          escapeHtml(formatNumber(row.idealTotal)),
+          escapeHtml(formatNumber(row.excessTotal)),
+          row.topDrivers.length
+            ? row.topDrivers.map((driver) => escapeHtml(driver.activity + " (" + driver.group + ", +" + formatNumber(driver.gap) + " hr)")).join("<br>")
+            : escapeHtml("No excess detected"),
+        ])
+      );
+
+      renderParetoChart(ui.flatTimeParetoChart, rankedOpportunities);
+      renderWaterfallChart(ui.flatTimeWaterfallChart, selectedDataset, allOpportunities);
+      renderMultiSeriesChart(
+        ui.flatTimeSectionBenchmarkChart,
+        sectionBenchmarkItems,
+        [
+          { key: "actualAverage", label: "Actual avg", color: "#1264d6", format: (value) => formatNumber(value) },
+          { key: "idealTime", label: "Recommended ideal", color: "#0f766e", format: (value) => formatNumber(value) },
+          { key: "spread", label: "Spread", color: "#c06a0a", format: (value) => formatNumber(value) },
+        ],
+        {
+          height: 420,
+          minWidth: 760,
+          groupMinWidth: 150,
+        }
+      );
 
       renderTable(
+        ui.flatTimeRigSummary,
+        ["Rig", "# Wells", "Avg Flat Time (hr)", "Ideal Flat Time (hr)", "Excess Time (hr)", "Main Repeating Activity"],
+        rigBenchmarkRows.map((row) => [
+          row.rigLabel,
+          String(row.wellCount),
+          formatNumber(row.averageFlatTime),
+          formatNumber(row.averageIdealTime),
+          formatNumber(row.excessTime),
+          row.mainRepeatingActivity,
+        ])
+      );
+
+      renderTableHtml(
+        ui.flatTimeOpportunityPipeline,
+        ["Activity", "Group", "Occurrences", "Wells Impacted", "Ideal Time (hr)", "Recoverable Hours", "Priority"],
+        opportunityPipeline.map((row) => [
+          flatTimeActionButtonHtml("activity", row.activityLabel, row.activityLabel),
+          escapeHtml(row.groupLabel),
+          escapeHtml(String(row.occurrenceCount)),
+          escapeHtml(String(row.wellsImpacted)),
+          escapeHtml(formatNumber(row.idealTime)),
+          escapeHtml(formatNumber(row.totalRecoverableHours)),
+          escapeHtml(row.priority),
+        ])
+      );
+
+      renderTableHtml(
+        ui.flatTimeBenchmarkTable,
+        ["Section", "Group", "Activity", "Sample", "Fastest", "P25", "Median", "Mean", "Recommended Ideal", "Variability", "Confidence", "Recoverable Hours", "Highest Well"],
+        allOpportunities
+          .slice(0, Math.max(topN * 2, 20))
+          .map((opportunity) => [
+            escapeHtml(formatFlatTimeSectionSize(opportunity.sectionSize)),
+            escapeHtml(opportunity.groupLabel),
+            flatTimeActionButtonHtml("activity", opportunity.activityLabel, opportunity.activityLabel),
+            escapeHtml(String(opportunity.occurrenceCount)),
+            escapeHtml(formatNumber(opportunity.fastestTime)),
+            escapeHtml(formatNumber(opportunity.p25Value)),
+            escapeHtml(formatNumber(opportunity.medianValue)),
+            escapeHtml(formatNumber(opportunity.meanValue)),
+            escapeHtml(formatNumber(opportunity.idealTime) + " (" + opportunity.idealRule + ")"),
+            escapeHtml(opportunity.variability),
+            confidenceBadgeHtml(opportunity.confidence),
+            escapeHtml(formatNumber(opportunity.totalRecoverableHours)),
+            flatTimeActionButtonHtml("well", opportunity.topEntry.label || "", (opportunity.topEntry.rigLabel || "Rig not mapped") + " • " + (opportunity.topEntry.label || "N/A")),
+          ])
+      );
+
+      renderTableHtml(
         ui.flatTimeOpportunityTable,
         ["Section", "Group", "Activity", "Sample", "Highest Rig", "Highest Well", "Actual Time (hr)", "Peer Avg (hr)", "Ideal Time (hr)", "Gap To Ideal (hr)", "How Gap Was Calculated"],
         rankedOpportunities.map((opportunity) => {
@@ -3389,17 +4433,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
               : "Only one well available, so no peer comparison yet";
 
           return [
-            formatFlatTimeSectionSize(opportunity.sectionSize),
-            opportunity.groupLabel,
-            opportunity.activityLabel,
-            String(opportunity.occurrenceCount),
-            opportunity.topEntry.rigLabel || "Rig not mapped",
-            opportunity.topEntry.label || "N/A",
-            formatNumber(opportunity.topEntry.value),
-            formatNumber(peerReference),
-            formatNumber(opportunity.idealTime),
-            formatNumber(opportunity.gapToIdeal),
-            explanation + " (" + opportunity.idealRule + ")",
+            escapeHtml(formatFlatTimeSectionSize(opportunity.sectionSize)),
+            escapeHtml(opportunity.groupLabel),
+            flatTimeActionButtonHtml("activity", opportunity.activityLabel, opportunity.activityLabel),
+            escapeHtml(String(opportunity.occurrenceCount)),
+            escapeHtml(opportunity.topEntry.rigLabel || "Rig not mapped"),
+            flatTimeActionButtonHtml("well", opportunity.topEntry.label || "", opportunity.topEntry.label || "N/A"),
+            escapeHtml(formatNumber(opportunity.topEntry.value)),
+            escapeHtml(formatNumber(peerReference)),
+            escapeHtml(formatNumber(opportunity.idealTime)),
+            escapeHtml(formatNumber(opportunity.gapToIdeal)),
+            escapeHtml(explanation + " (" + opportunity.idealRule + ")"),
           ];
         })
       );
@@ -3414,7 +4458,24 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         ])
       );
 
-      renderPerfectFlatTimeChart(ui.flatTimePerfectChart, datasets);
+      renderTable(
+        ui.flatTimeLossDrivers,
+        ["Rig", "Well", "Top Driver 1", "Top Driver 2", "Top Driver 3", "Excess Time (hr)"],
+        wellRanking.map((row) => [
+          row.rigLabel,
+          row.wellLabel,
+          row.topDrivers[0] ? row.topDrivers[0].activity + " (+" + formatNumber(row.topDrivers[0].gap) + " hr)" : "-",
+          row.topDrivers[1] ? row.topDrivers[1].activity + " (+" + formatNumber(row.topDrivers[1].gap) + " hr)" : "-",
+          row.topDrivers[2] ? row.topDrivers[2].activity + " (+" + formatNumber(row.topDrivers[2].gap) + " hr)" : "-",
+          formatNumber(row.excessTotal),
+        ])
+      );
+
+      renderVariabilityChart(ui.flatTimeVariabilityChart, allOpportunities, topN);
+      renderHeatmap(ui.flatTimeHeatmap, datasets, allOpportunities, topN);
+      renderPerfectFlatTimeChart(ui.flatTimePerfectChart, datasets, metricKey);
+      renderFlatTimeDrilldown(datasets, allOpportunities, selectedWell, selectedActivity);
+      wireFlatTimeFocusActions();
     }
 
     function renderWeeklyReport() {
@@ -3857,11 +4918,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       ui.flatTimeSection.addEventListener("change", renderFlatTime);
       ui.flatTimeMetric.addEventListener("change", renderFlatTime);
       ui.flatTimeTopN.addEventListener("change", renderFlatTime);
+      ui.flatTimeMode.addEventListener("change", renderFlatTime);
+      ui.flatTimeWell.addEventListener("change", () => {
+        flatTimeState.focusWell = ui.flatTimeWell.value || "";
+        renderFlatTime();
+      });
       ui.flatTimeClearUploads.addEventListener("click", () => {
         flatTimeState.uploadedDatasets = [];
         ui.flatTimeUpload.value = "";
         ui.flatTimeRig.value = "";
         ui.flatTimeSection.value = "";
+        ui.flatTimeWell.value = "";
+        flatTimeState.focusWell = "";
+        flatTimeState.focusActivity = "";
         renderFlatTime();
       });
       ui.flatTimeUpload.addEventListener("change", async () => {
