@@ -788,6 +788,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
     }
 
+    .flat-time-chart-stack {
+      display: grid;
+      gap: 18px;
+    }
+
     .report-grid-3 {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -1656,7 +1661,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </section>
 
         <section class="panel section">
-          <div class="report-grid-2">
+          <div class="flat-time-chart-stack">
             <div class="report-card">
               <h3>Group Comparison</h3>
               <p class="report-note">Compare the largest flat time group totals across all uploaded benchmark files.</p>
@@ -2266,7 +2271,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       return niceFraction * Math.pow(10, exponent);
     }
 
-    function renderMultiSeriesChart(target, items, seriesDefs) {
+    function renderMultiSeriesChart(target, items, seriesDefs, options = {}) {
       if (!items.length) {
         target.innerHTML = '<div class="empty">No data available for this block.</div>';
         return;
@@ -2310,8 +2315,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         )
       );
 
-      const width = Math.max(620, items.length * Math.max(150, seriesDefs.length * 44 + 70));
-      const height = 360;
+      const width = Math.max(options.minWidth || 620, items.length * Math.max(options.groupMinWidth || 150, seriesDefs.length * 44 + 70));
+      const height = options.height || 360;
       const margin = { top: 28, right: 18, bottom: 88, left: 52 };
       const chartWidth = width - margin.left - margin.right;
       const chartHeight = height - margin.top - margin.bottom;
@@ -3095,8 +3100,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         format: (value) => formatNumber(value),
       }));
 
-      renderMultiSeriesChart(ui.flatTimeGroupChart, groupItems.slice(0, 8), seriesDefs);
-      renderMultiSeriesChart(ui.flatTimeActivityChart, activityItems.slice(0, topN), seriesDefs);
+      renderMultiSeriesChart(ui.flatTimeGroupChart, groupItems.slice(0, 8), seriesDefs, {
+        height: 430,
+        minWidth: 880,
+        groupMinWidth: 180,
+      });
+      renderMultiSeriesChart(ui.flatTimeActivityChart, activityItems.slice(0, topN), seriesDefs, {
+        height: 430,
+        minWidth: 880,
+        groupMinWidth: 180,
+      });
 
       renderTable(
         ui.flatTimeOpportunityTable,
