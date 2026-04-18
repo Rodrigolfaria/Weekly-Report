@@ -13,7 +13,7 @@ from email.policy import default
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from generate_report import build_report_html, load_flat_time_directory
 
@@ -23,6 +23,14 @@ BASIC_AUTH_USER = os.getenv("BASIC_AUTH_USER", "")
 BASIC_AUTH_PASSWORD = os.getenv("BASIC_AUTH_PASSWORD", "")
 ALLOWED_IPS = [item.strip() for item in os.getenv("ALLOWED_IPS", "").split(",") if item.strip()]
 ROOT_DIR = Path(__file__).resolve().parent
+
+
+def list_bundled_spreadsheets() -> list[Path]:
+    return sorted(
+        path
+        for path in ROOT_DIR.glob("*.xlsx")
+        if path.is_file() and not path.name.startswith("~$")
+    )
 
 
 def parse_uploaded_spreadsheet(headers, body: bytes) -> tuple[str, bytes] | tuple[None, None]:
@@ -54,6 +62,31 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
     alert_html = ""
     if message:
         alert_html = f'<div class="alert{" is-error" if is_error else ""}">{html.escape(message)}</div>'
+
+    bundled_files = list_bundled_spreadsheets()
+    bundled_html = ""
+    if bundled_files:
+        bundled_html = """
+    <section class="section">
+      <h2>Use bundled workbook</h2>
+      <p>If your company browser blocks file uploads, you can open a workbook that already exists in the app root.</p>
+      <div class="bundled-list">
+""" + "".join(
+            f"""
+        <form class="bundled-card" method="post" action="/open-bundled">
+          <input type="hidden" name="filename" value="{html.escape(path.name)}">
+          <div>
+            <strong>{html.escape(path.name)}</strong>
+            <div class="bundled-meta">Loaded directly from the application root.</div>
+          </div>
+          <button class="upload-button bundled-button" type="submit">Open bundled workbook</button>
+        </form>
+"""
+            for path in bundled_files
+        ) + """
+      </div>
+    </section>
+"""
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -224,6 +257,32 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
       border-color: #f6caca;
       color: var(--danger-text);
     }}
+    .bundled-list {{
+      display: grid;
+      gap: 14px;
+      margin-top: 16px;
+    }}
+    .bundled-card {{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      padding: 16px 18px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(246,250,255,0.95));
+    }}
+    .bundled-meta {{
+      margin-top: 6px;
+      font-size: 14px;
+      color: var(--muted);
+    }}
+    .bundled-button {{
+      color: var(--text);
+      background: #eef4ff;
+      border-color: #c8d8ef;
+    }}
     code {{
       background: #eef4ff;
       padding: 2px 6px;
@@ -257,6 +316,18 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
       background: #0f1015;
       color: #f5f5f5;
       border-color: #2c2e33;
+    }}
+    body.theme-corona .bundled-card {{
+      background: #111318;
+      border-color: #2c2e33;
+    }}
+    body.theme-corona .bundled-meta {{
+      color: #a1aab8;
+    }}
+    body.theme-corona .bundled-button {{
+      color: #f5f5f5;
+      background: linear-gradient(135deg, #0090e7, #0069aa);
+      border-color: transparent;
     }}
     body.theme-corona .theme-toggle-thumb {{
       transform: translateX(100%);
@@ -315,11 +386,14 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
       {alert_html}
     </section>
 
+    {bundled_html}
+
     <section class="section">
       <h2>How to use</h2>
       <p>1. <code>upload a .xlsx file</code>.</p>
-      <p>2. Open <code>Generate your report</code> in the browser.</p>
-      <p>3. Close application <code>NO DATA IS STORED</code>.</p>
+      <p>2. or open a <code>bundled workbook from the app root</code>.</p>
+      <p>3. Review the dashboard in the browser.</p>
+      <p>4. Uploaded files are not stored after processing.</p>
     </section>
   </div>
   <script>
@@ -455,8 +529,42 @@ class ReportHandler(BaseHTTPRequestHandler):
             self._send_auth_challenge()
             return
 
-        if parsed.path != "/upload":
+        if parsed.path not in {"/upload", "/open-bundled"}:
             self._send_text(HTTPStatus.NOT_FOUND, "<h1>404</h1><p>Page not found.</p>")
+            return
+
+        if parsed.path == "/open-bundled":
+            try:
+                content_length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                content_length = 0
+
+            body = self.rfile.read(content_length) if content_length > 0 else b""
+            form = parse_qs(body.decode("utf-8", errors="ignore"))
+            filename = (form.get("filename") or [""])[0]
+            selected_path = ROOT_DIR / Path(filename).name
+
+            if not filename or not selected_path.exists() or selected_path.parent != ROOT_DIR:
+                self._send_text(
+                    HTTPStatus.BAD_REQUEST,
+                    render_home_page("Could not find the selected bundled workbook.", True),
+                )
+                return
+
+            try:
+                html_report = build_report_html(
+                    selected_path.name,
+                    selected_path.read_bytes(),
+                    flat_time_payload=load_flat_time_directory(ROOT_DIR),
+                )
+            except Exception as exc:  # noqa: BLE001
+                self._send_text(
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                    render_home_page(f"Could not process the bundled workbook: {exc}", True),
+                )
+                return
+
+            self._send_text(HTTPStatus.OK, html_report)
             return
 
         try:

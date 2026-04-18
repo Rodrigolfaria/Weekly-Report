@@ -1,13 +1,17 @@
 # Automacao do Reporte
 
-O app agora esta preparado para publicacao sem depender de arquivos `.xlsx` dentro do projeto.
+O app agora suporta dois fluxos:
+
+- upload de `.xlsx` pela interface
+- abertura de um `.xlsx` que ja esteja na raiz do app
 
 ## Como funciona
 
 - o usuario abre o servidor local
-- faz upload do arquivo `.xlsx` pela interface
+- faz upload do arquivo `.xlsx` pela interface ou abre um workbook ja presente na raiz do app
 - o dashboard e o `Weekly Report` sao gerados automaticamente
 - os arquivos enviados nao ficam salvos no servidor
+- workbooks que estiverem na raiz do app podem ser usados como exemplo ou fallback em ambientes corporativos com upload bloqueado
 
 ## Rodar o app
 
@@ -71,10 +75,10 @@ Observacoes:
 
 ## Fluxo de uso
 
-1. clique em `Upload And Open Report`
-2. escolha um arquivo `.xlsx`
+1. clique em `Upload And Open Report` e escolha um `.xlsx`
+2. ou use `Open bundled workbook` para abrir um `.xlsx` da raiz do app
 3. o sistema gera o dashboard automaticamente
-4. use a aba `Weekly Report` para filtros, exportacao PDF e tabelas executivas
+4. use as abas `Interactive Dashboard`, `Weekly Report` e `Flat Time`
 
 ## Arquivos principais
 
@@ -88,4 +92,4 @@ Observacoes:
 
 - o app nao precisa mais que a planilha fique dentro do projeto
 - o arquivo enviado e processado somente em memoria
-- para publicar o repositorio, basta nao incluir arquivos `.xlsx`
+- se quiser disponibilizar um exemplo sem upload, voce pode manter um `.xlsx` na raiz do app

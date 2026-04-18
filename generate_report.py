@@ -5,6 +5,7 @@ import argparse
 import csv
 import html
 import json
+import re
 from io import BytesIO
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -1616,6 +1617,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <div class="flat-time-toolbar">
             <div style="display:flex; gap:16px; flex-wrap:wrap;">
               <div class="field" style="min-width: 190px;">
+                <label for="flat-time-section">Section Size</label>
+                <select id="flat-time-section">
+                  <option value="">All section sizes</option>
+                </select>
+              </div>
+              <div class="field" style="min-width: 190px;">
                 <label for="flat-time-metric">Comparison Metric</label>
                 <select id="flat-time-metric">
                   <option value="subject">Subject Well Time</option>
@@ -1750,6 +1757,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       weeklyStatsTable: document.getElementById("weekly-stats-table"),
       flatTimeTitle: document.getElementById("flat-time-title"),
       flatTimeSubtitle: document.getElementById("flat-time-subtitle"),
+      flatTimeSection: document.getElementById("flat-time-section"),
       flatTimeMetric: document.getElementById("flat-time-metric"),
       flatTimeTopN: document.getElementById("flat-time-top-n"),
       flatTimeUpload: document.getElementById("flat-time-upload"),
@@ -1909,6 +1917,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
         const activity = {
           activity: first,
+          sectionSize: extractFlatTimeSectionSize(first),
           subjectHours: Number(row[1] || 0),
           meanHours: Number(row[2] || 0),
           medianHours: Number(row[3] || 0),
@@ -1959,6 +1968,83 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     function createFlatTimeUploadId(fileName, subjectWell) {
       return slugify(fileName + "-" + subjectWell + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8));
+    }
+
+    function extractFlatTimeSectionSize(activityName) {
+      const match = String(activityName || "").match(/^(\\d+(?:\\.\\d+)?)(?=-)/);
+      return match ? match[1] : "__no_section__";
+    }
+
+    function formatFlatTimeSectionSize(sectionSize) {
+      return sectionSize === "__no_section__" ? "No section size" : sectionSize + '"';
+    }
+
+    function compareFlatTimeSectionSizes(left, right) {
+      if (left === right) return 0;
+      if (left === "__no_section__") return 1;
+      if (right === "__no_section__") return -1;
+      return Number(left) - Number(right) || left.localeCompare(right);
+    }
+
+    function getAvailableFlatTimeSectionSizes(datasets) {
+      return Array.from(
+        new Set(
+          datasets.flatMap((dataset) =>
+            dataset.groups.flatMap((group) =>
+              group.activities.map((activity) => activity.sectionSize || extractFlatTimeSectionSize(activity.activity))
+            )
+          )
+        )
+      ).sort(compareFlatTimeSectionSizes);
+    }
+
+    function populateFlatTimeSectionOptions(datasets) {
+      const current = ui.flatTimeSection.value;
+      const options = ['<option value="">All section sizes</option>'];
+      getAvailableFlatTimeSectionSizes(datasets).forEach((sectionSize) => {
+        options.push(
+          '<option value="' + escapeHtml(sectionSize) + '">' + escapeHtml(formatFlatTimeSectionSize(sectionSize)) + "</option>"
+        );
+      });
+      ui.flatTimeSection.innerHTML = options.join("");
+      const available = getAvailableFlatTimeSectionSizes(datasets);
+      if (available.includes(current)) {
+        ui.flatTimeSection.value = current;
+      }
+    }
+
+    function filterFlatTimeDatasetsBySection(datasets, sectionSize) {
+      if (!sectionSize) return datasets;
+
+      return datasets
+        .map((dataset) => {
+          const groups = dataset.groups
+            .map((group) => {
+              const activities = group.activities.filter(
+                (activity) => (activity.sectionSize || extractFlatTimeSectionSize(activity.activity)) === sectionSize
+              );
+              if (!activities.length) return null;
+              return {
+                groupName: group.groupName,
+                activities,
+                totalSubjectHours: activities.reduce((sum, activity) => sum + Number(activity.subjectHours || 0), 0),
+                totalMeanHours: activities.reduce((sum, activity) => sum + Number(activity.meanHours || 0), 0),
+                totalMedianHours: activities.reduce((sum, activity) => sum + Number(activity.medianHours || 0), 0),
+              };
+            })
+            .filter(Boolean);
+
+          if (!groups.length) return null;
+
+          return {
+            ...dataset,
+            groups,
+            totalSubjectHours: groups.reduce((sum, group) => sum + Number(group.totalSubjectHours || 0), 0),
+            totalMeanHours: groups.reduce((sum, group) => sum + Number(group.totalMeanHours || 0), 0),
+            totalMedianHours: groups.reduce((sum, group) => sum + Number(group.totalMedianHours || 0), 0),
+          };
+        })
+        .filter(Boolean);
     }
 
     function average(numbers) {
@@ -2806,7 +2892,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           group.activities.forEach((activity) => {
             const key = activity.activity;
             if (!activityMap.has(key)) {
-              activityMap.set(key, { label: key, groupLabel: group.groupName });
+              activityMap.set(key, {
+                label: key,
+                groupLabel: group.groupName,
+                sectionSize: activity.sectionSize || extractFlatTimeSectionSize(activity.activity),
+              });
             }
             activityMap.get(key)[dataset.id] = Number(activity[metricKey] || 0);
           });
@@ -2895,14 +2985,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     function renderFlatTime() {
-      const datasets = getFlatTimeDatasets();
+      const rawDatasets = getFlatTimeDatasets();
       const metricKey = getFlatTimeMetricKey();
       const totalKey = getFlatTimeTotalKey();
       const topN = Number(ui.flatTimeTopN.value || 10);
+      const selectedSectionSize = ui.flatTimeSection.value || "";
 
-      renderFlatTimeDatasetTags(datasets);
+      renderFlatTimeDatasetTags(rawDatasets);
+      populateFlatTimeSectionOptions(rawDatasets);
 
-      if (!datasets.length) {
+      if (!rawDatasets.length) {
         ui.flatTimeTitle.textContent = "No flat time datasets loaded";
         ui.flatTimeSubtitle.textContent = "Use the CSV uploader to compare benchmark files.";
         ui.flatTimeSummary.innerHTML = '<div class="empty">Upload flat time CSV files to start the comparison.</div>';
@@ -2913,11 +3005,25 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         return;
       }
 
+      const datasets = filterFlatTimeDatasetsBySection(rawDatasets, selectedSectionSize);
+
+      if (!datasets.length) {
+        ui.flatTimeTitle.textContent = "No data for selected section size";
+        ui.flatTimeSubtitle.textContent = "Try another section size or switch back to all sections.";
+        ui.flatTimeSummary.innerHTML = '<div class="empty">No benchmark activities match the selected section size.</div>';
+        ui.flatTimeGroupChart.innerHTML = '<div class="empty">No flat time group data available for this section size.</div>';
+        ui.flatTimeActivityChart.innerHTML = '<div class="empty">No flat time activity data available for this section size.</div>';
+        ui.flatTimeOpportunityTable.innerHTML = '<div class="empty">No flat time comparison table available for this section size.</div>';
+        ui.flatTimeGroupTable.innerHTML = '<div class="empty">No flat time group table available for this section size.</div>';
+        return;
+      }
+
       const groupItems = buildFlatTimeGroupItems(datasets, totalKey);
       const activityItems = buildFlatTimeActivityItems(datasets, metricKey);
+      const sectionLabel = selectedSectionSize ? formatFlatTimeSectionSize(selectedSectionSize) : "All section sizes";
 
       ui.flatTimeTitle.textContent = datasets.length + " benchmark files compared";
-      ui.flatTimeSubtitle.textContent = datasets.map((dataset) => dataset.subjectWell).join(" vs ");
+      ui.flatTimeSubtitle.textContent = sectionLabel + " across " + datasets.map((dataset) => dataset.subjectWell).join(" vs ");
 
       renderFlatTimeSummary(datasets, metricKey, totalKey, activityItems, groupItems);
 
@@ -2933,7 +3039,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       renderTable(
         ui.flatTimeOpportunityTable,
-        ["Group", "Activity", "Total Time (hr)", "Avg / Well (hr)", "Highest Well", "Gap Vs Peer Avg (hr)"],
+        ["Section", "Group", "Activity", "Total Time (hr)", "Avg / Well (hr)", "Highest Well", "Gap Vs Peer Avg (hr)"],
         activityItems.slice(0, topN).map((item) => {
           const ranked = datasets
             .map((dataset) => ({ label: dataset.subjectWell, value: Number(item[dataset.id] || 0) }))
@@ -2945,6 +3051,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           const gapVsPeerAverage = peerValues.length ? Math.max(topValue - peerAverage, 0) : 0;
           const averagePerWell = values.length ? item.total / values.length : 0;
           return [
+            formatFlatTimeSectionSize(item.sectionSize || "__no_section__"),
             item.groupLabel || "Unknown",
             item.label,
             formatNumber(item.total),
@@ -3402,6 +3509,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         ui.presetButtons.forEach((button) => button.classList.remove("is-active"));
         renderWeeklyReport();
       });
+      ui.flatTimeSection.addEventListener("change", renderFlatTime);
       ui.flatTimeMetric.addEventListener("change", renderFlatTime);
       ui.flatTimeTopN.addEventListener("change", renderFlatTime);
       ui.flatTimeClearUploads.addEventListener("click", () => {
@@ -3736,6 +3844,11 @@ def sorted_unique(values: list[str]) -> list[str]:
     return sorted({value for value in values if value})
 
 
+def extract_flat_time_section_size(activity_name: str) -> str:
+    match = re.match(r"^(\d+(?:\.\d+)?)(?=-)", activity_name or "")
+    return match.group(1) if match else "__no_section__"
+
+
 def parse_flat_time_rows(file_name: str, rows: list[list[str]]) -> dict[str, Any] | None:
     normalized_rows = [[(cell or "").strip() for cell in row] for row in rows]
     subject_well = next((row[1].strip() for row in normalized_rows if len(row) > 1 and row[0] == "Subject Well"), file_name)
@@ -3768,6 +3881,7 @@ def parse_flat_time_rows(file_name: str, rows: list[list[str]]) -> dict[str, Any
         current_group["activities"].append(
             {
                 "activity": first,
+                "sectionSize": extract_flat_time_section_size(first),
                 "subjectHours": as_number(row[1] if len(row) > 1 else 0),
                 "meanHours": as_number(row[2] if len(row) > 2 else 0),
                 "medianHours": as_number(row[3] if len(row) > 3 else 0),
