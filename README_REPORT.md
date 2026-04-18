@@ -2,13 +2,13 @@
 
 O app agora suporta dois fluxos:
 
-- upload de `.xlsx` pela interface
+- upload de `.xlsx` ou `Intervention Log .csv` pela interface
 - abertura do dashboard sem workbook, para usar a aba `Flat Time` somente com `.csv`
 
 ## Como funciona
 
 - o usuario abre o servidor local
-- faz upload do arquivo `.xlsx` pela interface ou abre o dashboard sem workbook
+- faz upload do arquivo `.xlsx` ou `Intervention Log .csv` pela interface, ou abre o dashboard sem workbook
 - o dashboard e o `Weekly Report` sao gerados automaticamente
 - os arquivos enviados nao ficam salvos no servidor
 - a aba `Flat Time` pode funcionar so com `.csv`, mesmo sem workbook carregado
@@ -75,7 +75,7 @@ Observacoes:
 
 ## Fluxo de uso
 
-1. clique em `Upload And Open Report` e escolha um `.xlsx`
+1. clique em `Upload And Open Report` e escolha um `.xlsx` ou `Intervention Log .csv`
 2. ou use `Open Dashboard Without Workbook` para entrar direto no app
 3. sem workbook, a aba `Flat Time` continua utilizavel com upload de `.csv`
 4. use as abas `Interactive Dashboard`, `Weekly Report` e `Flat Time`
@@ -94,3 +94,5 @@ Observacoes:
 - o arquivo enviado e processado somente em memoria
 - nenhum `.xlsx` fica embutido no servidor
 - em ambientes corporativos, `.csv` normalmente passa com menos restricao porque e texto simples, enquanto `.xlsx` e um pacote Office compactado e costuma ser inspecionado por antivirus, DLP, filtro de upload e politicas anti-malware
+- no modo `CSV`, o sistema considera que o arquivo representa a aba `Intervention Log`
+- no modo `CSV`, secoes que dependem de outras abas, como `RTES CA`, ficam vazias por falta de fonte adicional

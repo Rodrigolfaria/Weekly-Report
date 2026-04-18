@@ -14,7 +14,11 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from generate_report import build_empty_report_html, build_report_html
+from generate_report import (
+    build_empty_report_html,
+    build_intervention_csv_report_html,
+    build_report_html,
+)
 
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
@@ -22,7 +26,7 @@ BASIC_AUTH_USER = os.getenv("BASIC_AUTH_USER", "")
 BASIC_AUTH_PASSWORD = os.getenv("BASIC_AUTH_PASSWORD", "")
 ALLOWED_IPS = [item.strip() for item in os.getenv("ALLOWED_IPS", "").split(",") if item.strip()]
 
-def parse_uploaded_spreadsheet(headers, body: bytes) -> tuple[str, bytes] | tuple[None, None]:
+def parse_uploaded_file(headers, body: bytes) -> tuple[str, bytes] | tuple[None, None]:
     content_type = headers.get("Content-Type", "")
     if "multipart/form-data" not in content_type:
         return None, None
@@ -313,7 +317,7 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
       <div class="hero-top">
         <div>
           <h1>Weekly Report Automation</h1>
-          <p>Upload an .xlsx file and the system generates the dashboard immediately.</p>
+          <p>Upload an <code>.xlsx</code> or <code>Intervention Log .csv</code> and the system generates the dashboard immediately.</p>
           <p>You can also open the dashboard without a workbook and use the Flat Time tab with CSV files only.</p>
         </div>
         <div class="theme-toggle-wrap">
@@ -328,7 +332,7 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
       </div>
       <form class="upload-form" method="post" action="/upload" enctype="multipart/form-data">
         <div class="upload-row">
-          <input class="upload-input" type="file" name="spreadsheet" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+          <input class="upload-input" type="file" name="spreadsheet" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" required>
           <button class="upload-button" type="submit">Upload And Open Report</button>
         </div>
         <div class="upload-help">The file is processed in memory only, so no Excel data is kept on the server.</div>
@@ -341,7 +345,7 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
 
     <section class="section">
       <h2>How to use</h2>
-      <p>1. <code>upload a .xlsx file</code>.</p>
+      <p>1. <code>upload a .xlsx file</code> or <code>Intervention Log .csv</code>.</p>
       <p>2. or open <code>the dashboard without a workbook</code> and use <code>Flat Time</code> with CSVs.</p>
       <p>3. Review the dashboard in the browser.</p>
       <p>4. Uploaded files are not stored after processing.</p>
@@ -508,32 +512,40 @@ class ReportHandler(BaseHTTPRequestHandler):
             return
 
         body = self.rfile.read(content_length)
-        filename, payload = parse_uploaded_spreadsheet(self.headers, body)
+        filename, payload = parse_uploaded_file(self.headers, body)
 
         if not filename or not payload:
             self._send_text(
                 HTTPStatus.BAD_REQUEST,
-                render_home_page("Please choose a valid .xlsx file before uploading.", True),
+                render_home_page("Please choose a valid .xlsx or .csv file before uploading.", True),
             )
             return
 
-        if not filename.lower().endswith(".xlsx"):
-            self._send_text(
-                HTTPStatus.BAD_REQUEST,
-                render_home_page("Only .xlsx files are supported.", True),
-            )
-            return
+        lower_name = filename.lower()
 
         try:
-            html_report = build_report_html(
-                filename,
-                payload,
-                flat_time_payload={"datasets": []},
-            )
+            if lower_name.endswith(".xlsx"):
+                html_report = build_report_html(
+                    filename,
+                    payload,
+                    flat_time_payload={"datasets": []},
+                )
+            elif lower_name.endswith(".csv"):
+                html_report = build_intervention_csv_report_html(
+                    filename,
+                    payload,
+                    flat_time_payload={"datasets": []},
+                )
+            else:
+                self._send_text(
+                    HTTPStatus.BAD_REQUEST,
+                    render_home_page("Only .xlsx and .csv files are supported.", True),
+                )
+                return
         except Exception as exc:  # noqa: BLE001
             self._send_text(
                 HTTPStatus.INTERNAL_SERVER_ERROR,
-                render_home_page(f"Could not process the spreadsheet: {exc}", True),
+                render_home_page(f"Could not process the uploaded file: {exc}", True),
             )
             return
 

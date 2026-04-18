@@ -5007,6 +5007,38 @@ def excel_serial_to_datetime(value: str) -> datetime | None:
     return datetime(1899, 12, 30) + timedelta(days=serial)
 
 
+def parse_datetime_value(value: str | None) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+
+    serial_date = excel_serial_to_datetime(text)
+    if serial_date:
+        return serial_date
+
+    normalized = (
+        text.replace(".", "/")
+        .replace("-", "/")
+        .replace("\\", "/")
+        .replace("T", " ")
+    )
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    normalized = normalized.split(" ")[0]
+
+    for fmt in (
+        "%m/%d/%Y",
+        "%m/%d/%y",
+        "%d/%m/%Y",
+        "%d/%m/%y",
+        "%Y/%m/%d",
+    ):
+        try:
+            return datetime.strptime(normalized, fmt)
+        except ValueError:
+            continue
+    return None
+
+
 def column_letters_to_index(cell_ref: str) -> int:
     letters = "".join(char for char in cell_ref if char.isalpha())
     result = 0
@@ -5132,14 +5164,14 @@ def as_number(value: str | None) -> float:
 
 
 def iso_date(value: str | None) -> str:
-    date_value = excel_serial_to_datetime(value or "")
+    date_value = parse_datetime_value(value)
     if not date_value:
         return ""
     return date_value.strftime("%Y-%m-%d")
 
 
 def iso_week(value: str | None) -> str:
-    date_value = excel_serial_to_datetime(value or "")
+    date_value = parse_datetime_value(value)
     if not date_value:
         return ""
     iso_year, iso_week_number, _ = date_value.isocalendar()
@@ -5147,7 +5179,7 @@ def iso_week(value: str | None) -> str:
 
 
 def iso_month(value: str | None) -> str:
-    date_value = excel_serial_to_datetime(value or "")
+    date_value = parse_datetime_value(value)
     if not date_value:
         return ""
     return date_value.strftime("%Y-%m")
@@ -5412,6 +5444,31 @@ def build_report_html(spreadsheet_name: str, spreadsheet_bytes: bytes, flat_time
     return build_html(
         title=f"Interactive Report - {spreadsheet_name}",
         source_file=spreadsheet_name,
+        generated_at=generated_at,
+        payload=payload,
+    )
+
+
+def build_csv_sheet(csv_name: str, csv_bytes: bytes) -> SheetData:
+    rows = list(csv.reader(csv_bytes.decode("utf-8-sig", errors="ignore").splitlines()))
+    return rows_to_dicts(csv_name, rows)
+
+
+def build_intervention_csv_report_html(csv_name: str, csv_bytes: bytes, flat_time_payload: dict[str, Any] | None = None) -> str:
+    csv_sheet = build_csv_sheet(csv_name, csv_bytes)
+    intervention_rows = build_intervention_rows(csv_sheet.rows)
+    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    payload = build_dashboard_payload(
+        spreadsheet_name=f"{csv_name} (Intervention Log CSV only)",
+        generated_at=generated_at,
+        intervention_rows=intervention_rows,
+        cost_avoidance_rows=[],
+        flat_time_payload=flat_time_payload,
+    )
+
+    return build_html(
+        title=f"Interactive Report - {csv_name}",
+        source_file=f"{csv_name} (CSV mode)",
         generated_at=generated_at,
         payload=payload,
     )
