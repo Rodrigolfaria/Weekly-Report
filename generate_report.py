@@ -3060,7 +3060,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         lines.push(generic[label]);
       }
 
-      return lines.join("\n");
+      return lines.join("\\n");
     }
 
     function flatTimeActivityLabelHtml(label) {
