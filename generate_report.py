@@ -1871,9 +1871,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     function parseFlatTimeCsvText(fileName, text) {
       const rows = String(text || "")
-        .replace(/\r\n/g, "\n")
-        .replace(/\r/g, "\n")
-        .split("\n")
+        .replace(/\\r\\n/g, "\\n")
+        .replace(/\\r/g, "\\n")
+        .split("\\n")
         .map((line) => parseCsvLine(line));
 
       const subjectWellRow = rows.find((row) => row[0] === "Subject Well");
