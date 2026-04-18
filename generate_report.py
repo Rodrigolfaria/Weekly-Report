@@ -2270,8 +2270,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             const dataset = getDataset(column.label);
             const group = getGroup(dataset, currentGroupName);
             group.totalSubjectHours = Number(row[column.index] || group.totalSubjectHours || 0);
-            group.totalMeanHours = currentHeader.meanIndex >= 0 ? Number(row[currentHeader.meanIndex] || group.totalMeanHours || 0) : group.totalMeanHours;
-            group.totalMedianHours = currentHeader.medianIndex >= 0 ? Number(row[currentHeader.medianIndex] || group.totalMedianHours || 0) : group.totalMedianHours;
           });
           return;
         }
@@ -2297,12 +2295,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           if (!group.totalSubjectHours) {
             group.totalSubjectHours = group.activities.reduce((sum, item) => sum + item.subjectHours, 0);
           }
-          if (!group.totalMeanHours) {
-            group.totalMeanHours = group.activities.reduce((sum, item) => sum + item.meanHours, 0);
-          }
-          if (!group.totalMedianHours) {
-            group.totalMedianHours = group.activities.reduce((sum, item) => sum + item.medianHours, 0);
-          }
+          // Recompute aggregate benchmarks from activity rows because several CSV
+          // exports carry inconsistent group total mean/median values.
+          group.totalMeanHours = group.activities.reduce((sum, item) => sum + item.meanHours, 0);
+          group.totalMedianHours = group.activities.reduce((sum, item) => sum + item.medianHours, 0);
         });
 
         return {
@@ -5378,8 +5374,6 @@ def parse_flat_time_rows(file_name: str, rows: list[list[str]]) -> dict[str, Any
 
         if first == "Total":
             current_group["totalSubjectHours"] = as_number(row[1] if len(row) > 1 else 0)
-            current_group["totalMeanHours"] = as_number(row[2] if len(row) > 2 else 0)
-            current_group["totalMedianHours"] = as_number(row[3] if len(row) > 3 else 0)
             continue
 
         current_group["activities"].append(
@@ -5401,10 +5395,8 @@ def parse_flat_time_rows(file_name: str, rows: list[list[str]]) -> dict[str, Any
     for group in groups:
         if not group["totalSubjectHours"]:
             group["totalSubjectHours"] = sum(activity["subjectHours"] for activity in group["activities"])
-        if not group["totalMeanHours"]:
-            group["totalMeanHours"] = sum(activity["meanHours"] for activity in group["activities"])
-        if not group["totalMedianHours"]:
-            group["totalMedianHours"] = sum(activity["medianHours"] for activity in group["activities"])
+        group["totalMeanHours"] = sum(activity["meanHours"] for activity in group["activities"])
+        group["totalMedianHours"] = sum(activity["medianHours"] for activity in group["activities"])
 
     return {
         "id": f"{Path(file_name).stem.lower().replace(' ', '-').replace('_', '-')}-{subject_well.lower().replace(' ', '-')}",
