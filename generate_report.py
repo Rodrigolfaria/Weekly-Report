@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import html
 import json
 from io import BytesIO
@@ -646,6 +647,69 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       gap: 22px;
     }
 
+    .flat-time-root {
+      display: grid;
+      gap: 22px;
+    }
+
+    .flat-time-toolbar {
+      display: flex;
+      gap: 16px;
+      align-items: end;
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }
+
+    .flat-time-upload-panel {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .file-input {
+      width: 100%;
+      border: 1px dashed var(--line);
+      border-radius: 14px;
+      padding: 10px 12px;
+      font: inherit;
+      color: var(--ink);
+      background: white;
+    }
+
+    .tag-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: var(--panel-alt);
+      border: 1px solid var(--line);
+      color: var(--ink);
+      font-size: 13px;
+    }
+
+    .tag-muted {
+      color: var(--muted);
+    }
+
+    .tag button {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font: inherit;
+      padding: 0;
+    }
+
     .weekly-toolbar {
       display: flex;
       gap: 16px;
@@ -900,7 +964,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     body.theme-corona .field input,
     body.theme-corona .field select,
     body.theme-corona .toggle,
-    body.theme-corona .theme-toggle {
+    body.theme-corona .theme-toggle,
+    body.theme-corona .file-input {
       background: #0f1015;
       color: #f5f5f5;
       border-color: #2c2e33;
@@ -946,6 +1011,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     body.theme-corona .bar-track {
       background: #0f1015;
+    }
+
+    body.theme-corona .tag {
+      background: rgba(0, 144, 231, 0.12);
+      border-color: rgba(0, 144, 231, 0.24);
+      color: #d5d9e0;
     }
 
     body.theme-corona .eyebrow,
@@ -1166,6 +1237,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <div class="view-tabs" role="tablist" aria-label="Report Views">
       <button class="view-tab is-active" data-view="dashboard-view">Interactive Dashboard</button>
       <button class="view-tab" data-view="weekly-report-view">Weekly Report</button>
+      <button class="view-tab" data-view="flat-time-view">Flat Time</button>
     </div>
 
     <div id="dashboard-view" class="view-panel">
@@ -1526,6 +1598,87 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       </div>
     </div>
+
+    <div id="flat-time-view" class="view-panel" hidden>
+      <div class="flat-time-root">
+        <section class="panel section">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">Flat Time</h2>
+              <p class="section-subtitle">Compare flat time benchmark files to identify which activities and groups are consuming more time and where procedural improvements can reduce the total well duration.</p>
+            </div>
+            <div class="status-box">
+              <strong id="flat-time-title">Preparing flat time comparison...</strong>
+              <span id="flat-time-subtitle">Loading benchmark datasets.</span>
+            </div>
+          </div>
+
+          <div class="flat-time-toolbar">
+            <div style="display:flex; gap:16px; flex-wrap:wrap;">
+              <div class="field" style="min-width: 190px;">
+                <label for="flat-time-metric">Comparison Metric</label>
+                <select id="flat-time-metric">
+                  <option value="subject">Subject Well Time</option>
+                  <option value="mean">Mean Time</option>
+                  <option value="median">Median Time</option>
+                </select>
+              </div>
+              <div class="field" style="min-width: 190px;">
+                <label for="flat-time-top-n">Top Activities</label>
+                <select id="flat-time-top-n">
+                  <option value="8">Top 8</option>
+                  <option value="10" selected>Top 10</option>
+                  <option value="15">Top 15</option>
+                </select>
+              </div>
+            </div>
+            <div class="flat-time-upload-panel">
+              <div class="field" style="min-width: 320px;">
+                <label for="flat-time-upload">Add More CSV Files</label>
+                <input id="flat-time-upload" class="file-input" type="file" accept=".csv,text/csv" multiple>
+              </div>
+              <button id="flat-time-clear-uploads" class="action-btn" type="button">Clear Added CSVs</button>
+            </div>
+          </div>
+
+          <div id="flat-time-dataset-tags" class="tag-list"></div>
+        </section>
+
+        <section class="panel section">
+          <div id="flat-time-summary" class="metric-strip"></div>
+        </section>
+
+        <section class="panel section">
+          <div class="report-grid-2">
+            <div class="report-card">
+              <h3>Group Comparison</h3>
+              <p class="report-note">Compare the largest flat time group totals across all uploaded benchmark files.</p>
+              <div id="flat-time-group-chart"></div>
+            </div>
+            <div class="report-card">
+              <h3>Top Activities By Time</h3>
+              <p class="report-note">Highlight the activities that are consuming the most time across the comparison set.</p>
+              <div id="flat-time-activity-chart"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel section">
+          <div class="report-grid-2">
+            <div class="report-card">
+              <h3>Reduction Opportunity Matrix</h3>
+              <p class="report-note">Activities ranked by total time and spread between wells, useful for targeting new procedures.</p>
+              <div id="flat-time-opportunity-table"></div>
+            </div>
+            <div class="report-card">
+              <h3>Group Totals By Dataset</h3>
+              <p class="report-note">Friendly comparison table showing how each benchmark dataset is distributed by flat time group.</p>
+              <div id="flat-time-group-table"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -1595,6 +1748,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       potentialHighlightsTable: document.getElementById("potential-highlights-table"),
       weeklyStatsMetrics: document.getElementById("weekly-stats-metrics"),
       weeklyStatsTable: document.getElementById("weekly-stats-table"),
+      flatTimeTitle: document.getElementById("flat-time-title"),
+      flatTimeSubtitle: document.getElementById("flat-time-subtitle"),
+      flatTimeMetric: document.getElementById("flat-time-metric"),
+      flatTimeTopN: document.getElementById("flat-time-top-n"),
+      flatTimeUpload: document.getElementById("flat-time-upload"),
+      flatTimeClearUploads: document.getElementById("flat-time-clear-uploads"),
+      flatTimeDatasetTags: document.getElementById("flat-time-dataset-tags"),
+      flatTimeSummary: document.getElementById("flat-time-summary"),
+      flatTimeGroupChart: document.getElementById("flat-time-group-chart"),
+      flatTimeActivityChart: document.getElementById("flat-time-activity-chart"),
+      flatTimeOpportunityTable: document.getElementById("flat-time-opportunity-table"),
+      flatTimeGroupTable: document.getElementById("flat-time-group-table"),
     };
 
     const currencyFormatter = new Intl.NumberFormat("en-US", {
@@ -1610,6 +1775,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     const CATEGORY_ORDER = ["Stuck pipe", "Optimization", "Operational Compliance", "Well Control", "Reporting"];
     const THEME_STORAGE_KEY = "weekly-report-theme";
+    const FLAT_TIME_SERIES_COLORS = ["#1264d6", "#0f766e", "#c06a0a", "#be123c", "#7c3aed", "#0891b2", "#16a34a", "#dc2626"];
+    const flatTimeState = {
+      baseDatasets: Array.isArray(dashboardData.flatTime?.datasets) ? dashboardData.flatTime.datasets : [],
+      uploadedDatasets: [],
+    };
 
     function getChartTheme() {
       const isCorona = document.body.classList.contains("theme-corona");
@@ -1648,6 +1818,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       applyTheme(document.body.classList.contains("theme-corona") ? "classic" : "corona");
       applyFilters();
       renderWeeklyReport();
+      renderFlatTime();
     }
 
     function escapeHtml(value) {
@@ -1665,6 +1836,129 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     function formatNumber(value) {
       return numberFormatter.format(Number(value || 0));
+    }
+
+    function slugify(value) {
+      return String(value || "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+    }
+
+    function parseCsvLine(line) {
+      const values = [];
+      let current = "";
+      let inQuotes = false;
+      for (let index = 0; index < line.length; index += 1) {
+        const char = line[index];
+        if (char === '"') {
+          if (inQuotes && line[index + 1] === '"') {
+            current += '"';
+            index += 1;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (char === "," && !inQuotes) {
+          values.push(current.trim());
+          current = "";
+        } else {
+          current += char;
+        }
+      }
+      values.push(current.trim());
+      return values;
+    }
+
+    function parseFlatTimeCsvText(fileName, text) {
+      const rows = String(text || "")
+        .replace(/\r\n/g, "\n")
+        .replace(/\r/g, "\n")
+        .split("\n")
+        .map((line) => parseCsvLine(line));
+
+      const subjectWellRow = rows.find((row) => row[0] === "Subject Well");
+      const subjectWell = (subjectWellRow?.[1] || fileName).trim();
+      const groups = [];
+      let currentGroup = null;
+
+      rows.forEach((row) => {
+        const first = (row[0] || "").trim();
+        if (first === "Group Name") {
+          if (currentGroup && currentGroup.activities.length) {
+            groups.push(currentGroup);
+          }
+          currentGroup = {
+            groupName: (row[1] || "Unknown").trim(),
+            activities: [],
+            totalSubjectHours: 0,
+            totalMeanHours: 0,
+            totalMedianHours: 0,
+          };
+          return;
+        }
+
+        if (!currentGroup) return;
+        if (first === "Activity" || first === "Group Type" || !first) return;
+
+        if (first === "Total") {
+          currentGroup.totalSubjectHours = Number(row[1] || currentGroup.totalSubjectHours || 0);
+          currentGroup.totalMeanHours = Number(row[2] || currentGroup.totalMeanHours || 0);
+          currentGroup.totalMedianHours = Number(row[3] || currentGroup.totalMedianHours || 0);
+          return;
+        }
+
+        const activity = {
+          activity: first,
+          subjectHours: Number(row[1] || 0),
+          meanHours: Number(row[2] || 0),
+          medianHours: Number(row[3] || 0),
+        };
+        currentGroup.activities.push(activity);
+      });
+
+      if (currentGroup && currentGroup.activities.length) {
+        groups.push(currentGroup);
+      }
+
+      groups.forEach((group) => {
+        if (!group.totalSubjectHours) {
+          group.totalSubjectHours = group.activities.reduce((sum, item) => sum + item.subjectHours, 0);
+        }
+        if (!group.totalMeanHours) {
+          group.totalMeanHours = group.activities.reduce((sum, item) => sum + item.meanHours, 0);
+        }
+        if (!group.totalMedianHours) {
+          group.totalMedianHours = group.activities.reduce((sum, item) => sum + item.medianHours, 0);
+        }
+      });
+
+      return {
+        id: slugify(fileName + "-" + subjectWell),
+        fileName,
+        subjectWell,
+        groups,
+        totalSubjectHours: groups.reduce((sum, group) => sum + group.totalSubjectHours, 0),
+        totalMeanHours: groups.reduce((sum, group) => sum + group.totalMeanHours, 0),
+        totalMedianHours: groups.reduce((sum, group) => sum + group.totalMedianHours, 0),
+      };
+    }
+
+    function getFlatTimeDatasets() {
+      return [...flatTimeState.baseDatasets, ...flatTimeState.uploadedDatasets];
+    }
+
+    function getFlatTimeMetricKey() {
+      const metric = ui.flatTimeMetric.value || "subject";
+      return metric === "mean" ? "meanHours" : metric === "median" ? "medianHours" : "subjectHours";
+    }
+
+    function getFlatTimeTotalKey() {
+      const metric = ui.flatTimeMetric.value || "subject";
+      return metric === "mean" ? "totalMeanHours" : metric === "median" ? "totalMedianHours" : "totalSubjectHours";
+    }
+
+    function createFlatTimeUploadId(fileName, subjectWell) {
+      return slugify(fileName + "-" + subjectWell + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8));
     }
 
     function average(numbers) {
@@ -2487,6 +2781,191 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       target.innerHTML = '<div class="table-wrap"><table class="stats-table">' + headerHtml + "<tbody>" + bodyHtml + "</tbody></table></div>";
     }
 
+    function buildFlatTimeGroupItems(datasets, totalKey) {
+      const groupNames = Array.from(
+        new Set(datasets.flatMap((dataset) => dataset.groups.map((group) => group.groupName)))
+      );
+
+      return groupNames
+        .map((groupName) => {
+          const item = { label: groupName };
+          datasets.forEach((dataset) => {
+            const match = dataset.groups.find((group) => group.groupName === groupName);
+            item[dataset.id] = match ? Number(match[totalKey] || 0) : 0;
+          });
+          item.total = datasets.reduce((sum, dataset) => sum + Number(item[dataset.id] || 0), 0);
+          return item;
+        })
+        .sort((left, right) => right.total - left.total || left.label.localeCompare(right.label));
+    }
+
+    function buildFlatTimeActivityItems(datasets, metricKey) {
+      const activityMap = new Map();
+      datasets.forEach((dataset) => {
+        dataset.groups.forEach((group) => {
+          group.activities.forEach((activity) => {
+            const key = activity.activity;
+            if (!activityMap.has(key)) {
+              activityMap.set(key, { label: key, groupLabel: group.groupName });
+            }
+            activityMap.get(key)[dataset.id] = Number(activity[metricKey] || 0);
+          });
+        });
+      });
+
+      return Array.from(activityMap.values())
+        .map((item) => {
+          datasets.forEach((dataset) => {
+            item[dataset.id] = Number(item[dataset.id] || 0);
+          });
+          item.total = datasets.reduce((sum, dataset) => sum + Number(item[dataset.id] || 0), 0);
+          return item;
+        })
+        .sort((left, right) => right.total - left.total || left.label.localeCompare(right.label));
+    }
+
+    function renderFlatTimeDatasetTags(datasets) {
+      if (!datasets.length) {
+        ui.flatTimeDatasetTags.innerHTML = '<span class="tag tag-muted">No flat time CSV datasets loaded yet.</span>';
+        return;
+      }
+
+      ui.flatTimeDatasetTags.innerHTML = datasets
+        .map((dataset) => {
+          const removable = flatTimeState.uploadedDatasets.some((item) => item.id === dataset.id);
+          return (
+            '<span class="tag">' +
+            '<strong>' + escapeHtml(dataset.subjectWell) + "</strong>" +
+            '<span class="tag-muted">' + escapeHtml(dataset.fileName) + "</span>" +
+            (removable ? '<button type="button" data-flat-time-remove="' + escapeHtml(dataset.id) + '">Remove</button>' : "") +
+            "</span>"
+          );
+        })
+        .join("");
+
+      Array.from(ui.flatTimeDatasetTags.querySelectorAll("[data-flat-time-remove]")).forEach((button) => {
+        button.addEventListener("click", () => {
+          flatTimeState.uploadedDatasets = flatTimeState.uploadedDatasets.filter((item) => item.id !== button.dataset.flatTimeRemove);
+          renderFlatTime();
+        });
+      });
+    }
+
+    function renderFlatTimeSummary(datasets, metricKey, totalKey, activityItems, groupItems) {
+      if (!datasets.length) {
+        ui.flatTimeSummary.innerHTML = '<div class="empty">Upload flat time CSV files to start the comparison.</div>';
+        return;
+      }
+
+      const topActivity = activityItems[0];
+      const topGroup = groupItems[0];
+      const highestDataset = datasets
+        .map((dataset) => ({ label: dataset.subjectWell, value: Number(dataset[totalKey] || 0) }))
+        .sort((left, right) => right.value - left.value)[0];
+      const spreadCandidates = activityItems
+        .map((item) => {
+          const values = datasets.map((dataset) => Number(item[dataset.id] || 0)).filter((value) => value > 0);
+          return {
+            label: item.label,
+            spread: values.length >= 2 ? Math.max(...values) - Math.min(...values) : 0,
+          };
+        })
+        .sort((left, right) => right.spread - left.spread);
+      const topSpread = spreadCandidates[0];
+      const overallHours = datasets.reduce((sum, dataset) => sum + Number(dataset[totalKey] || 0), 0);
+
+      const cards = [
+        { label: "Benchmarks Compared", value: String(datasets.length), meta: datasets.map((dataset) => dataset.subjectWell).join(", ") },
+        { label: "Top Consuming Activity", value: topActivity ? topActivity.label : "N/A", meta: topActivity ? formatNumber(topActivity.total) + " hr total" : "No activity data" },
+        { label: "Largest Group", value: topGroup ? topGroup.label : "N/A", meta: topGroup ? formatNumber(topGroup.total) + " hr total" : "No group data" },
+        { label: "Highest Burden Well", value: highestDataset ? highestDataset.label : "N/A", meta: highestDataset ? formatNumber(highestDataset.value) + " hr total" : "No dataset totals" },
+        { label: "Best Reduction Opportunity", value: topSpread ? topSpread.label : "N/A", meta: topSpread ? formatNumber(topSpread.spread) + " hr spread" : "Need more than one dataset" },
+        { label: "Total Compared Time", value: formatNumber(overallHours), meta: metricKey === "subjectHours" ? "Subject well hours" : metricKey === "meanHours" ? "Mean hours" : "Median hours" },
+      ];
+
+      ui.flatTimeSummary.innerHTML = cards
+        .map((card) => (
+          '<div class="metric-pill">' +
+          '<div class="label">' + escapeHtml(card.label) + "</div>" +
+          '<div class="value"><span class="value-main">' + escapeHtml(card.value) + '</span></div>' +
+          '<div class="meta">' + escapeHtml(card.meta) + "</div>" +
+          "</div>"
+        ))
+        .join("");
+    }
+
+    function renderFlatTime() {
+      const datasets = getFlatTimeDatasets();
+      const metricKey = getFlatTimeMetricKey();
+      const totalKey = getFlatTimeTotalKey();
+      const topN = Number(ui.flatTimeTopN.value || 10);
+
+      renderFlatTimeDatasetTags(datasets);
+
+      if (!datasets.length) {
+        ui.flatTimeTitle.textContent = "No flat time datasets loaded";
+        ui.flatTimeSubtitle.textContent = "Use the CSV uploader to compare benchmark files.";
+        ui.flatTimeSummary.innerHTML = '<div class="empty">Upload flat time CSV files to start the comparison.</div>';
+        ui.flatTimeGroupChart.innerHTML = '<div class="empty">No flat time group data available.</div>';
+        ui.flatTimeActivityChart.innerHTML = '<div class="empty">No flat time activity data available.</div>';
+        ui.flatTimeOpportunityTable.innerHTML = '<div class="empty">No flat time comparison table available.</div>';
+        ui.flatTimeGroupTable.innerHTML = '<div class="empty">No flat time group table available.</div>';
+        return;
+      }
+
+      const groupItems = buildFlatTimeGroupItems(datasets, totalKey);
+      const activityItems = buildFlatTimeActivityItems(datasets, metricKey);
+
+      ui.flatTimeTitle.textContent = datasets.length + " benchmark files compared";
+      ui.flatTimeSubtitle.textContent = datasets.map((dataset) => dataset.subjectWell).join(" vs ");
+
+      renderFlatTimeSummary(datasets, metricKey, totalKey, activityItems, groupItems);
+
+      const seriesDefs = datasets.map((dataset, index) => ({
+        key: dataset.id,
+        label: dataset.subjectWell,
+        color: FLAT_TIME_SERIES_COLORS[index % FLAT_TIME_SERIES_COLORS.length],
+        format: (value) => formatNumber(value),
+      }));
+
+      renderMultiSeriesChart(ui.flatTimeGroupChart, groupItems.slice(0, 8), seriesDefs);
+      renderMultiSeriesChart(ui.flatTimeActivityChart, activityItems.slice(0, topN), seriesDefs);
+
+      renderTable(
+        ui.flatTimeOpportunityTable,
+        ["Group", "Activity", "Total Time (hr)", "Avg / Well (hr)", "Highest Well", "Gap Vs Peer Avg (hr)"],
+        activityItems.slice(0, topN).map((item) => {
+          const ranked = datasets
+            .map((dataset) => ({ label: dataset.subjectWell, value: Number(item[dataset.id] || 0) }))
+            .sort((left, right) => right.value - left.value);
+          const values = ranked.map((itemValue) => itemValue.value).filter((value) => value > 0);
+          const topValue = ranked[0]?.value || 0;
+          const peerValues = ranked.slice(1).map((entry) => entry.value).filter((value) => value > 0);
+          const peerAverage = peerValues.length ? average(peerValues) : 0;
+          const gapVsPeerAverage = peerValues.length ? Math.max(topValue - peerAverage, 0) : 0;
+          const averagePerWell = values.length ? item.total / values.length : 0;
+          return [
+            item.groupLabel || "Unknown",
+            item.label,
+            formatNumber(item.total),
+            formatNumber(averagePerWell),
+            ranked[0]?.label || "N/A",
+            formatNumber(gapVsPeerAverage),
+          ];
+        })
+      );
+
+      renderTable(
+        ui.flatTimeGroupTable,
+        ["Group", ...datasets.map((dataset) => dataset.subjectWell), "Total"],
+        groupItems.map((item) => [
+          item.label,
+          ...datasets.map((dataset) => formatNumber(item[dataset.id] || 0)),
+          formatNumber(item.total),
+        ])
+      );
+    }
+
     function renderWeeklyReport() {
       const range = getWeeklyReportDateRange();
       if (!range.start && !range.end) {
@@ -2923,6 +3402,28 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         ui.presetButtons.forEach((button) => button.classList.remove("is-active"));
         renderWeeklyReport();
       });
+      ui.flatTimeMetric.addEventListener("change", renderFlatTime);
+      ui.flatTimeTopN.addEventListener("change", renderFlatTime);
+      ui.flatTimeClearUploads.addEventListener("click", () => {
+        flatTimeState.uploadedDatasets = [];
+        ui.flatTimeUpload.value = "";
+        renderFlatTime();
+      });
+      ui.flatTimeUpload.addEventListener("change", async () => {
+        const files = Array.from(ui.flatTimeUpload.files || []);
+        if (!files.length) return;
+        const parsed = await Promise.all(
+          files.map(async (file) => parseFlatTimeCsvText(file.name, await file.text()))
+        );
+        const prepared = parsed
+          .filter((item) => item && item.groups && item.groups.length)
+          .map((item) => ({ ...item, id: createFlatTimeUploadId(item.fileName, item.subjectWell) }));
+        flatTimeState.uploadedDatasets = [
+          ...flatTimeState.uploadedDatasets,
+          ...prepared,
+        ];
+        renderFlatTime();
+      });
     }
 
     function initialize() {
@@ -2956,6 +3457,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       updateSectionVisibility();
       applyFilters();
       renderWeeklyReport();
+      renderFlatTime();
     }
 
     initialize();
@@ -3234,14 +3736,94 @@ def sorted_unique(values: list[str]) -> list[str]:
     return sorted({value for value in values if value})
 
 
+def parse_flat_time_rows(file_name: str, rows: list[list[str]]) -> dict[str, Any] | None:
+    normalized_rows = [[(cell or "").strip() for cell in row] for row in rows]
+    subject_well = next((row[1].strip() for row in normalized_rows if len(row) > 1 and row[0] == "Subject Well"), file_name)
+    groups: list[dict[str, Any]] = []
+    current_group: dict[str, Any] | None = None
+
+    for row in normalized_rows:
+        first = row[0] if row else ""
+        if first == "Group Name":
+            if current_group and current_group["activities"]:
+                groups.append(current_group)
+            current_group = {
+                "groupName": row[1] if len(row) > 1 else "Unknown",
+                "activities": [],
+                "totalSubjectHours": 0.0,
+                "totalMeanHours": 0.0,
+                "totalMedianHours": 0.0,
+            }
+            continue
+
+        if current_group is None or not first or first in {"Group Type", "Activity"}:
+            continue
+
+        if first == "Total":
+            current_group["totalSubjectHours"] = as_number(row[1] if len(row) > 1 else 0)
+            current_group["totalMeanHours"] = as_number(row[2] if len(row) > 2 else 0)
+            current_group["totalMedianHours"] = as_number(row[3] if len(row) > 3 else 0)
+            continue
+
+        current_group["activities"].append(
+            {
+                "activity": first,
+                "subjectHours": as_number(row[1] if len(row) > 1 else 0),
+                "meanHours": as_number(row[2] if len(row) > 2 else 0),
+                "medianHours": as_number(row[3] if len(row) > 3 else 0),
+            }
+        )
+
+    if current_group and current_group["activities"]:
+        groups.append(current_group)
+
+    if not groups:
+        return None
+
+    for group in groups:
+        if not group["totalSubjectHours"]:
+            group["totalSubjectHours"] = sum(activity["subjectHours"] for activity in group["activities"])
+        if not group["totalMeanHours"]:
+            group["totalMeanHours"] = sum(activity["meanHours"] for activity in group["activities"])
+        if not group["totalMedianHours"]:
+            group["totalMedianHours"] = sum(activity["medianHours"] for activity in group["activities"])
+
+    return {
+        "id": f"{Path(file_name).stem.lower().replace(' ', '-').replace('_', '-')}-{subject_well.lower().replace(' ', '-')}",
+        "fileName": file_name,
+        "subjectWell": subject_well,
+        "groups": groups,
+        "totalSubjectHours": sum(group["totalSubjectHours"] for group in groups),
+        "totalMeanHours": sum(group["totalMeanHours"] for group in groups),
+        "totalMedianHours": sum(group["totalMedianHours"] for group in groups),
+    }
+
+
+def load_flat_time_directory(directory: Path) -> dict[str, Any]:
+    datasets: list[dict[str, Any]] = []
+    for path in sorted(directory.glob("*.csv")):
+        if path.name.startswith("."):
+            continue
+        try:
+            with path.open(newline="", encoding="utf-8-sig") as handle:
+                rows = list(csv.reader(handle))
+        except OSError:
+            continue
+        parsed = parse_flat_time_rows(path.name, rows)
+        if parsed:
+            datasets.append(parsed)
+    return {"datasets": datasets}
+
+
 def build_dashboard_payload(
     spreadsheet_name: str,
     generated_at: str,
     intervention_rows: list[dict[str, Any]],
     cost_avoidance_rows: list[dict[str, Any]],
+    flat_time_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     dates = [row["date"] for row in intervention_rows if row["date"]]
-    return {
+    payload = {
         "meta": {
             "sourceFile": spreadsheet_name,
             "generatedAt": generated_at,
@@ -3263,6 +3845,9 @@ def build_dashboard_payload(
         "interventions": intervention_rows,
         "costAvoidance": cost_avoidance_rows,
     }
+    if flat_time_payload is not None:
+        payload["flatTime"] = flat_time_payload
+    return payload
 
 
 def build_html(title: str, source_file: str, generated_at: str, payload: dict[str, Any]) -> str:
@@ -3274,7 +3859,7 @@ def build_html(title: str, source_file: str, generated_at: str, payload: dict[st
     return output
 
 
-def build_report_html(spreadsheet_name: str, spreadsheet_bytes: bytes) -> str:
+def build_report_html(spreadsheet_name: str, spreadsheet_bytes: bytes, flat_time_payload: dict[str, Any] | None = None) -> str:
     sheets = load_workbook(spreadsheet_bytes)
     sheet_map = {sheet.name: sheet for sheet in sheets}
 
@@ -3290,6 +3875,7 @@ def build_report_html(spreadsheet_name: str, spreadsheet_bytes: bytes) -> str:
         generated_at=generated_at,
         intervention_rows=intervention_rows,
         cost_avoidance_rows=cost_avoidance_rows,
+        flat_time_payload=flat_time_payload,
     )
 
     return build_html(
@@ -3301,7 +3887,11 @@ def build_report_html(spreadsheet_name: str, spreadsheet_bytes: bytes) -> str:
 
 
 def build_report(spreadsheet: Path, output_path: Path) -> None:
-    html_output = build_report_html(spreadsheet.name, spreadsheet.read_bytes())
+    html_output = build_report_html(
+        spreadsheet.name,
+        spreadsheet.read_bytes(),
+        flat_time_payload=load_flat_time_directory(spreadsheet.parent),
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(html_output, encoding="utf-8")
 

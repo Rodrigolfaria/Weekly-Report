@@ -12,15 +12,17 @@ from email.parser import BytesParser
 from email.policy import default
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import urlparse
 
-from generate_report import build_report_html
+from generate_report import build_report_html, load_flat_time_directory
 
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 BASIC_AUTH_USER = os.getenv("BASIC_AUTH_USER", "")
 BASIC_AUTH_PASSWORD = os.getenv("BASIC_AUTH_PASSWORD", "")
 ALLOWED_IPS = [item.strip() for item in os.getenv("ALLOWED_IPS", "").split(",") if item.strip()]
+ROOT_DIR = Path(__file__).resolve().parent
 
 
 def parse_uploaded_spreadsheet(headers, body: bytes) -> tuple[str, bytes] | tuple[None, None]:
@@ -491,7 +493,11 @@ class ReportHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            html_report = build_report_html(filename, payload)
+            html_report = build_report_html(
+                filename,
+                payload,
+                flat_time_payload=load_flat_time_directory(ROOT_DIR),
+            )
         except Exception as exc:  # noqa: BLE001
             self._send_text(
                 HTTPStatus.INTERNAL_SERVER_ERROR,
