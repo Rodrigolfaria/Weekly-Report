@@ -517,6 +517,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       width: 100%;
       overflow-x: auto;
       padding-bottom: 6px;
+      min-width: 0;
+      max-width: 100%;
     }
 
     .column-chart-svg {
@@ -531,6 +533,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       border: 1px solid var(--line);
       border-radius: 18px;
       background: white;
+      min-width: 0;
+      max-width: 100%;
     }
 
     table {
@@ -788,6 +792,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
     }
 
+    .report-grid-2 > *,
+    .report-grid-3 > *,
+    .flat-time-chart-stack > *,
+    .drill-grid > * {
+      min-width: 0;
+    }
+
     .flat-time-chart-stack {
       display: grid;
       gap: 18px;
@@ -806,6 +817,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       border-radius: 22px;
       background: linear-gradient(180deg, #ffffff, #f8fbff);
       border: 1px solid var(--line);
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
     }
 
     .report-card h3 {
@@ -862,6 +876,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       font: inherit;
       text-align: left;
       padding: 6px 10px;
+      max-width: 100%;
+      white-space: normal;
+      word-break: break-word;
     }
 
     .table-action:hover {
