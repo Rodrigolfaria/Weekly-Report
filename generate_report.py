@@ -1776,7 +1776,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </section>
 
         <section class="panel section" data-flat-mode="executive engineering">
-          <div class="report-grid-2">
+          <div class="flat-time-chart-stack">
             <div class="report-card">
               <h3>Well Ranking by Excess Time</h3>
               <p class="report-note">Ranks wells by time above the recommended ideal, highlighting the main activity and group driving the excess.</p>
@@ -1791,7 +1791,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </section>
 
         <section class="panel section" data-flat-mode="executive engineering">
-          <div class="report-grid-2">
+          <div class="flat-time-chart-stack">
             <div class="report-card">
               <h3>Well vs Ideal Waterfall</h3>
               <p class="report-note">Starts from the selected well actual flat time, subtracts the biggest activity gaps and lands on the recommended ideal total.</p>
@@ -1806,7 +1806,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </section>
 
         <section class="panel section" data-flat-mode="executive engineering">
-          <div class="report-grid-2">
+          <div class="flat-time-chart-stack">
             <div class="report-card">
               <h3>Rig Benchmark Summary</h3>
               <p class="report-note">Summarizes rig-level average flat time, ideal target, excess time and the main repeating activity.</p>
