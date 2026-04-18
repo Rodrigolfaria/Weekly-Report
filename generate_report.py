@@ -1785,6 +1785,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 <label for="flat-time-upload">Add More CSV Files</label>
                 <input id="flat-time-upload" class="file-input" type="file" accept=".csv,text/csv" multiple>
               </div>
+              <button id="flat-time-recalculate" class="action-btn" type="button">Recalculate</button>
               <button id="flat-time-clear-uploads" class="action-btn" type="button">Clear All CSVs</button>
             </div>
           </div>
@@ -2006,6 +2007,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       flatTimeMode: document.getElementById("flat-time-mode"),
       flatTimeWell: document.getElementById("flat-time-well"),
       flatTimeUpload: document.getElementById("flat-time-upload"),
+      flatTimeRecalculate: document.getElementById("flat-time-recalculate"),
       flatTimeClearUploads: document.getElementById("flat-time-clear-uploads"),
       flatTimeDatasetTags: document.getElementById("flat-time-dataset-tags"),
       flatTimeSummary: document.getElementById("flat-time-summary"),
@@ -3048,6 +3050,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       return (Number(value || 0) * 100).toFixed(1) + "%";
     }
 
+    function formatHoursWithDays(value) {
+      const hours = Number(value || 0);
+      return formatNumber(hours) + " hr / " + formatNumber(hours / 24) + " d";
+    }
+
     function formatDateHuman(dateString) {
       if (!dateString) return "";
       return new Date(dateString + "T00:00:00").toLocaleDateString("en-GB", {
@@ -4068,15 +4075,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       ui.flatTimeWellDrilldown.innerHTML =
         '<div class="metric-strip" style="margin-bottom:14px;">' +
         '<div class="metric-pill"><div class="label">Selected Well</div><div class="value"><span class="value-main">' + escapeHtml(selectedDataset.subjectWell) + '</span></div><div class="meta">' + escapeHtml(selectedDataset.rigLabel || "Rig not mapped") + '</div></div>' +
-        '<div class="metric-pill"><div class="label">Actual Flat Time</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(wellActualTotal)) + '</span><span class="value-suffix">hr</span></div><div class="meta">All activities in the selected filter context</div></div>' +
-        '<div class="metric-pill"><div class="label">Ideal Flat Time</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(wellIdealTotal)) + '</span><span class="value-suffix">hr</span></div><div class="meta">Recommended achievable total for the same activities</div></div>' +
-        '<div class="metric-pill"><div class="label">Recoverable Gap</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(wellExcess)) + '</span><span class="value-suffix">hr</span></div><div class="meta">Time above the recommended ideal</div></div>' +
+        '<div class="metric-pill"><div class="label">Actual Flat Time</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(wellActualTotal)) + '</span><span class="value-suffix">' + escapeHtml("hr / " + formatNumber(wellActualTotal / 24) + " d") + '</span></div><div class="meta">All activities in the selected filter context</div></div>' +
+        '<div class="metric-pill"><div class="label">Ideal Flat Time</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(wellIdealTotal)) + '</span><span class="value-suffix">' + escapeHtml("hr / " + formatNumber(wellIdealTotal / 24) + " d") + '</span></div><div class="meta">Recommended achievable total for the same activities</div></div>' +
+        '<div class="metric-pill"><div class="label">Recoverable Gap</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(wellExcess)) + '</span><span class="value-suffix">' + escapeHtml("hr / " + formatNumber(wellExcess / 24) + " d") + '</span></div><div class="meta">Time above the recommended ideal</div></div>' +
         '</div>' +
         '<div class="drill-list">' +
         wellDrivers.map((item) =>
           '<div class="drill-item">' +
           '<strong>' + flatTimeActionButtonHtml("activity", item.activityLabel, item.activityLabel) + '</strong>' +
-          '<span>' + escapeHtml(item.groupLabel + " • actual " + formatNumber(item.actual) + " hr • peers avg " + formatNumber(item.peerAverage) + " hr • ideal " + formatNumber(item.idealTime) + " hr • gap " + formatNumber(item.gap) + " hr") + '</span>' +
+          '<span>' + escapeHtml(item.groupLabel + " • actual " + formatHoursWithDays(item.actual) + " • peers avg " + formatHoursWithDays(item.peerAverage) + " • ideal " + formatHoursWithDays(item.idealTime) + " • gap " + formatHoursWithDays(item.gap)) + '</span>' +
           '</div>'
         ).join('') +
         '</div>';
@@ -4094,17 +4101,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       ui.flatTimeActivityDrilldown.innerHTML =
         '<div class="metric-strip" style="margin-bottom:14px;">' +
         '<div class="metric-pill"><div class="label">Selected Activity</div><div class="value"><span class="value-main">' + escapeHtml(selectedOpportunity.activityLabel) + '</span></div><div class="meta">' + escapeHtml(selectedOpportunity.groupLabel + " • " + formatFlatTimeSectionSize(selectedOpportunity.sectionSize)) + '</div></div>' +
-        '<div class="metric-pill"><div class="label">Recommended Ideal</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(selectedOpportunity.idealTime)) + '</span><span class="value-suffix">hr</span></div><div class="meta">' + escapeHtml(selectedOpportunity.idealRule) + '</div></div>' +
+        '<div class="metric-pill"><div class="label">Recommended Ideal</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(selectedOpportunity.idealTime)) + '</span><span class="value-suffix">' + escapeHtml("hr / " + formatNumber(selectedOpportunity.idealTime / 24) + " d") + '</span></div><div class="meta">' + escapeHtml(selectedOpportunity.idealRule) + '</div></div>' +
         '<div class="metric-pill"><div class="label">Confidence</div><div class="value">' + confidenceBadgeHtml(selectedOpportunity.confidence) + '</div><div class="meta">' + escapeHtml(selectedOpportunity.variability + " variability • sample " + selectedOpportunity.occurrenceCount) + '</div></div>' +
-        '<div class="metric-pill"><div class="label">Observed Range</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(selectedOpportunity.fastestTime)) + " - " + escapeHtml(formatNumber(Math.max(...selectedOpportunity.values, 0))) + '</span><span class="value-suffix">hr</span></div><div class="meta">Fastest to slowest observed execution</div></div>' +
+        '<div class="metric-pill"><div class="label">Observed Range</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(selectedOpportunity.fastestTime)) + " - " + escapeHtml(formatNumber(Math.max(...selectedOpportunity.values, 0))) + '</span><span class="value-suffix">' + escapeHtml("hr / " + formatNumber(selectedOpportunity.fastestTime / 24) + " - " + formatNumber(Math.max(...selectedOpportunity.values, 0) / 24) + " d") + '</span></div><div class="meta">Fastest to slowest observed execution</div></div>' +
         '</div>' +
         '<div class="table-wrap"><table><thead><tr><th>Rig</th><th>Well</th><th>Observed Time (hr)</th><th>Gap vs Ideal (hr)</th></tr></thead><tbody>' +
         peerRows.map((row) =>
           '<tr>' +
           '<td>' + escapeHtml(row.rigLabel) + '</td>' +
           '<td>' + flatTimeActionButtonHtml("well", row.label, row.label) + '</td>' +
-          '<td>' + escapeHtml(formatNumber(row.value)) + '</td>' +
-          '<td>' + escapeHtml(formatNumber(row.gap)) + '</td>' +
+          '<td>' + escapeHtml(formatHoursWithDays(row.value)) + '</td>' +
+          '<td>' + escapeHtml(formatHoursWithDays(row.gap)) + '</td>' +
           '</tr>'
         ).join('') +
         '</tbody></table></div>';
@@ -5026,6 +5033,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         flatTimeState.focusWell = ui.flatTimeWell.value || "";
         renderFlatTime();
       });
+      ui.flatTimeRecalculate.addEventListener("click", renderFlatTime);
       ui.flatTimeClearUploads.addEventListener("click", () => {
         flatTimeState.uploadedDatasets = [];
         ui.flatTimeUpload.value = "";
