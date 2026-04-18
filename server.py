@@ -64,8 +64,27 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
         alert_html = f'<div class="alert{" is-error" if is_error else ""}">{html.escape(message)}</div>'
 
     bundled_files = list_bundled_spreadsheets()
+    bundled_hero_html = ""
     bundled_html = ""
     if bundled_files:
+        bundled_hero_html = """
+      <div class="bundled-hero">
+        <div class="bundled-hero-title">Blocked from uploading?</div>
+        <div class="bundled-hero-actions">
+""" + "".join(
+            f"""
+          <form class="bundled-hero-form" method="post" action="/open-bundled">
+            <input type="hidden" name="filename" value="{html.escape(path.name)}">
+            <button class="upload-button bundled-hero-button" type="submit">
+              Open {html.escape(path.name)}
+            </button>
+          </form>
+"""
+            for path in bundled_files
+        ) + """
+        </div>
+      </div>
+"""
         bundled_html = """
     <section class="section">
       <h2>Use bundled workbook</h2>
@@ -196,6 +215,35 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
       font-size: 14px;
       color: rgba(255, 255, 255, 0.82);
     }}
+    .bundled-hero {{
+      display: grid;
+      gap: 10px;
+      margin-top: 16px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+    }}
+    .bundled-hero-title {{
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.86);
+    }}
+    .bundled-hero-actions {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }}
+    .bundled-hero-form {{
+      margin: 0;
+    }}
+    .bundled-hero-button {{
+      background: rgba(255, 255, 255, 0.96);
+      color: #102033;
+      border-color: transparent;
+    }}
     .theme-toggle-wrap {{
       display: grid;
       gap: 10px;
@@ -321,6 +369,15 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
       background: #111318;
       border-color: #2c2e33;
     }}
+    body.theme-corona .bundled-hero {{
+      background: #0f1015;
+      border-color: #2c2e33;
+    }}
+    body.theme-corona .bundled-hero-button {{
+      color: #f5f5f5;
+      background: linear-gradient(135deg, #0090e7, #0069aa);
+      border-color: transparent;
+    }}
     body.theme-corona .bundled-meta {{
       color: #a1aab8;
     }}
@@ -383,6 +440,7 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
         </div>
         <div class="upload-help">The file is processed in memory only, so no Excel data is kept on the server.</div>
       </form>
+      {bundled_hero_html}
       {alert_html}
     </section>
 
