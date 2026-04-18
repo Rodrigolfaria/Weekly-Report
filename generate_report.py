@@ -1682,10 +1682,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </section>
 
         <section class="panel section">
-          <div class="report-grid-2">
+          <div class="flat-time-chart-stack">
             <div class="report-card">
               <h3>Reduction Opportunity Matrix</h3>
-              <p class="report-note">Activities ranked by total time and spread between wells, useful for targeting new procedures.</p>
+              <p class="report-note">Gap is calculated against the ideal achievable time for the activity. Example: if 4 wells ran near 30 hr and 1 well ran 45 hr, the gap shown is 15 hr.</p>
               <div id="flat-time-opportunity-table"></div>
             </div>
             <div class="report-card">
@@ -3168,6 +3168,73 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .sort((left, right) => right.total - left.total || left.label.localeCompare(right.label));
     }
 
+    function computeFlatTimeOpportunity(item, datasets) {
+      const ranked = datasets
+        .map((dataset) => ({
+          label: dataset.subjectWell,
+          rigLabel: dataset.rigLabel || "Rig not mapped",
+          value: Number(item[dataset.id] || 0),
+        }))
+        .filter((entry) => entry.value > 0)
+        .sort((left, right) => right.value - left.value);
+
+      const values = ranked.map((entry) => entry.value);
+      const occurrenceCount = values.length;
+      const topEntry = ranked[0] || { label: "N/A", rigLabel: "Rig not mapped", value: 0 };
+      const meanValue = occurrenceCount ? values.reduce((sum, value) => sum + value, 0) / occurrenceCount : 0;
+      const peerValues = ranked.slice(1).map((entry) => entry.value).filter((value) => value > 0);
+      const peerAverage = peerValues.length ? average(peerValues) : 0;
+      const fastestTime = occurrenceCount ? Math.min(...values) : 0;
+      const sortedValues = values.slice().sort((left, right) => left - right);
+      const medianValue = occurrenceCount
+        ? (occurrenceCount % 2
+            ? sortedValues[(occurrenceCount - 1) / 2]
+            : (sortedValues[occurrenceCount / 2 - 1] + sortedValues[occurrenceCount / 2]) / 2)
+        : 0;
+
+      let idealTime = fastestTime;
+      let idealRule = "fastest";
+
+      if (occurrenceCount >= 3 && fastestTime > 0) {
+        const meanGapRatio = meanValue > 0 ? Math.abs(meanValue - fastestTime) / meanValue : 0;
+        const medianGapRatio = medianValue > 0 ? Math.abs(medianValue - fastestTime) / medianValue : 0;
+        if (meanGapRatio > 0.35 || medianGapRatio > 0.35) {
+          idealTime = Math.min(meanValue || Infinity, medianValue || Infinity);
+          idealRule = "stable central tendency";
+        }
+      }
+
+      if (!Number.isFinite(idealTime) || idealTime <= 0) {
+        idealTime = fastestTime || meanValue || medianValue || 0;
+      }
+
+      const gapToIdeal = Math.max(topEntry.value - idealTime, 0);
+      const gapVsPeerAverage = peerAverage > 0 ? Math.max(topEntry.value - peerAverage, 0) : 0;
+
+      return {
+        sectionSize: item.sectionSize || "__no_section__",
+        groupLabel: item.groupLabel || "Unknown",
+        activityLabel: item.label,
+        totalTime: item.total,
+        averagePerWell: occurrenceCount ? item.total / occurrenceCount : 0,
+        peerAverage,
+        meanValue,
+        medianValue,
+        fastestTime,
+        idealTime,
+        idealRule,
+        gapToIdeal,
+        gapVsPeerAverage,
+        topEntry,
+        occurrenceCount,
+        values,
+        summaryText:
+          occurrenceCount >= 2
+            ? occurrenceCount + " wells; peers avg " + formatNumber(peerAverage || meanValue || 0) + " hr, top well " + topEntry.label + " ran " + formatNumber(topEntry.value) + " hr"
+            : "Only one well observed for this activity",
+      };
+    }
+
     function renderFlatTimeDatasetTags(datasets) {
       if (!datasets.length) {
         ui.flatTimeDatasetTags.innerHTML = '<span class="tag tag-muted">No flat time CSV datasets loaded yet.</span>';
@@ -3206,27 +3273,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const highestDataset = datasets
         .map((dataset) => ({ label: dataset.subjectWell, rigLabel: dataset.rigLabel || "Rig not mapped", value: Number(dataset[totalKey] || 0) }))
         .sort((left, right) => right.value - left.value)[0];
-      const spreadCandidates = activityItems
-        .map((item) => {
-          const ranked = datasets
-            .map((dataset) => ({
-              label: dataset.subjectWell,
-              rigLabel: dataset.rigLabel || "Rig not mapped",
-              value: Number(item[dataset.id] || 0),
-            }))
-            .sort((left, right) => right.value - left.value);
-          const values = ranked.map((entry) => entry.value).filter((value) => value > 0);
-          return {
-            label: item.label,
-            groupLabel: item.groupLabel,
-            sectionSize: item.sectionSize,
-            spread: values.length >= 2 ? Math.max(...values) - Math.min(...values) : 0,
-            topDatasetLabel: ranked[0]?.label || "N/A",
-            topRigLabel: ranked[0]?.rigLabel || "Rig not mapped",
-          };
-        })
-        .sort((left, right) => right.spread - left.spread);
-      const topSpread = spreadCandidates[0];
+      const opportunities = activityItems.map((item) => computeFlatTimeOpportunity(item, datasets));
+      const topSpread = opportunities
+        .slice()
+        .sort((left, right) => right.gapToIdeal - left.gapToIdeal || right.gapVsPeerAverage - left.gapVsPeerAverage)[0];
       const overallHours = datasets.reduce((sum, dataset) => sum + Number(dataset[totalKey] || 0), 0);
 
       const cards = [
@@ -3236,8 +3286,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         { label: "Highest Burden Well", value: highestDataset ? highestDataset.label : "N/A", meta: highestDataset ? (highestDataset.rigLabel + " • " + formatNumber(highestDataset.value) + " hr total") : "No dataset totals" },
         {
           label: "Best Reduction Opportunity",
-          value: topSpread ? topSpread.topRigLabel : "N/A",
-          meta: topSpread ? (topSpread.topDatasetLabel + " • " + topSpread.label + " • " + formatNumber(topSpread.spread) + " hr spread") : "Need more than one dataset",
+          value: topSpread ? topSpread.topEntry.rigLabel : "N/A",
+          meta: topSpread ? (topSpread.topEntry.label + " • " + topSpread.activityLabel + " • gap " + formatNumber(topSpread.gapToIdeal) + " hr vs ideal") : "Need more than one dataset",
         },
         { label: "Total Compared Time", value: formatNumber(overallHours), meta: metricKey === "subjectHours" ? "Subject well hours" : metricKey === "meanHours" ? "Mean hours" : "Median hours" },
       ];
@@ -3319,32 +3369,35 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         groupMinWidth: 180,
       });
 
+      const rankedOpportunities = activityItems
+        .map((item) => computeFlatTimeOpportunity(item, datasets))
+        .sort((left, right) => right.gapToIdeal - left.gapToIdeal || right.totalTime - left.totalTime)
+        .slice(0, topN);
+
       renderTable(
         ui.flatTimeOpportunityTable,
-        ["Section", "Group", "Activity", "Total Time (hr)", "Avg / Well (hr)", "Highest Rig", "Highest Well", "Gap Vs Peer Avg (hr)"],
-        activityItems.slice(0, topN).map((item) => {
-          const ranked = datasets
-            .map((dataset) => ({
-              label: dataset.subjectWell,
-              rigLabel: dataset.rigLabel || "Rig not mapped",
-              value: Number(item[dataset.id] || 0),
-            }))
-            .sort((left, right) => right.value - left.value);
-          const values = ranked.map((itemValue) => itemValue.value).filter((value) => value > 0);
-          const topValue = ranked[0]?.value || 0;
-          const peerValues = ranked.slice(1).map((entry) => entry.value).filter((value) => value > 0);
-          const peerAverage = peerValues.length ? average(peerValues) : 0;
-          const gapVsPeerAverage = peerValues.length ? Math.max(topValue - peerAverage, 0) : 0;
-          const averagePerWell = values.length ? item.total / values.length : 0;
+        ["Section", "Group", "Activity", "Highest Rig", "Highest Well", "Peer Avg (hr)", "Ideal Time (hr)", "Gap To Ideal (hr)", "How Gap Was Calculated"],
+        rankedOpportunities.map((opportunity) => {
+          const peerReference = opportunity.peerAverage || opportunity.meanValue || opportunity.medianValue || 0;
+          const explanation =
+            opportunity.occurrenceCount >= 2
+              ? (
+                  (opportunity.occurrenceCount - 1) + " peer wells avg " + formatNumber(peerReference) +
+                  " hr; " + opportunity.topEntry.label + " took " + formatNumber(opportunity.topEntry.value) +
+                  " hr; gap = " + formatNumber(opportunity.topEntry.value) + " - " + formatNumber(opportunity.idealTime)
+                )
+              : "Only one well available, so no peer comparison yet";
+
           return [
-            formatFlatTimeSectionSize(item.sectionSize || "__no_section__"),
-            item.groupLabel || "Unknown",
-            item.label,
-            formatNumber(item.total),
-            formatNumber(averagePerWell),
-            ranked[0]?.rigLabel || "Rig not mapped",
-            ranked[0]?.label || "N/A",
-            formatNumber(gapVsPeerAverage),
+            formatFlatTimeSectionSize(opportunity.sectionSize),
+            opportunity.groupLabel,
+            opportunity.activityLabel,
+            opportunity.topEntry.rigLabel || "Rig not mapped",
+            opportunity.topEntry.label || "N/A",
+            formatNumber(peerReference),
+            formatNumber(opportunity.idealTime),
+            formatNumber(opportunity.gapToIdeal),
+            explanation + " (" + opportunity.idealRule + ")",
           ];
         })
       );
