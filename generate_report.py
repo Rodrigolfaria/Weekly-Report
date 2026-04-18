@@ -2462,6 +2462,56 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .filter(Boolean);
     }
 
+    function annotateFlatTimeScopedBenchmarks(datasets) {
+      if (!datasets.length) return datasets;
+
+      const activityScopeMap = new Map();
+
+      datasets.forEach((dataset) => {
+        dataset.groups.forEach((group) => {
+          group.activities.forEach((activity) => {
+            const sectionSize = activity.sectionSize || extractFlatTimeSectionSize(activity.activity);
+            const scopeKey = [sectionSize, group.groupName, activity.activity].join("||");
+            const subjectHours = Number(activity.subjectHours || 0);
+            if (subjectHours <= 0) return;
+            if (!activityScopeMap.has(scopeKey)) activityScopeMap.set(scopeKey, []);
+            activityScopeMap.get(scopeKey).push(subjectHours);
+          });
+        });
+      });
+
+      return datasets.map((dataset) => {
+        const groups = dataset.groups.map((group) => {
+          const activities = group.activities.map((activity) => {
+            const sectionSize = activity.sectionSize || extractFlatTimeSectionSize(activity.activity);
+            const scopeKey = [sectionSize, group.groupName, activity.activity].join("||");
+            const values = activityScopeMap.get(scopeKey) || [];
+            return {
+              ...activity,
+              meanHours: values.length ? average(values) : 0,
+              medianHours: values.length ? percentile(values, 0.5) : 0,
+            };
+          });
+
+          return {
+            ...group,
+            activities,
+            totalSubjectHours: activities.reduce((sum, item) => sum + Number(item.subjectHours || 0), 0),
+            totalMeanHours: activities.reduce((sum, item) => sum + Number(item.meanHours || 0), 0),
+            totalMedianHours: activities.reduce((sum, item) => sum + Number(item.medianHours || 0), 0),
+          };
+        });
+
+        return {
+          ...dataset,
+          groups,
+          totalSubjectHours: groups.reduce((sum, group) => sum + Number(group.totalSubjectHours || 0), 0),
+          totalMeanHours: groups.reduce((sum, group) => sum + Number(group.totalMeanHours || 0), 0),
+          totalMedianHours: groups.reduce((sum, group) => sum + Number(group.totalMedianHours || 0), 0),
+        };
+      });
+    }
+
     function buildPerfectFlatTimeSections(datasets) {
       const sectionMap = new Map();
 
@@ -4312,7 +4362,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       const rigDatasets = filterFlatTimeDatasetsByRig(allDatasets, selectedRig);
       populateFlatTimeSectionOptions(rigDatasets);
-      const datasets = filterFlatTimeDatasetsBySection(rigDatasets, selectedSectionSize);
+      const datasets = annotateFlatTimeScopedBenchmarks(
+        filterFlatTimeDatasetsBySection(rigDatasets, selectedSectionSize)
+      );
 
       if (!datasets.length) {
         ui.flatTimeTitle.textContent = "No data for selected section size";
