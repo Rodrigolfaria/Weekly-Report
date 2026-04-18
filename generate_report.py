@@ -1784,6 +1784,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const CATEGORY_ORDER = ["Stuck pipe", "Optimization", "Operational Compliance", "Well Control", "Reporting"];
     const THEME_STORAGE_KEY = "weekly-report-theme";
     const FLAT_TIME_SERIES_COLORS = ["#1264d6", "#0f766e", "#c06a0a", "#be123c", "#7c3aed", "#0891b2", "#16a34a", "#dc2626"];
+    const FLAT_TIME_RIG_LOOKUP = buildFlatTimeRigLookup(Array.isArray(dashboardData.interventions) ? dashboardData.interventions : []);
     const flatTimeState = {
       baseDatasets: Array.isArray(dashboardData.flatTime?.datasets) ? dashboardData.flatTime.datasets : [],
       uploadedDatasets: [],
@@ -1851,6 +1852,51 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-+|-+$/g, "");
+    }
+
+    function normalizeFlatTimeWellToken(value) {
+      return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    }
+
+    function baseFlatTimeWellToken(value) {
+      return normalizeFlatTimeWellToken(String(value || "").replace(/_\\d+$/, ""));
+    }
+
+    function buildFlatTimeRigLookup(rows) {
+      const lookup = new Map();
+
+      function addRig(key, rigName) {
+        if (!key || !rigName) return;
+        if (!lookup.has(key)) lookup.set(key, new Set());
+        lookup.get(key).add(rigName);
+      }
+
+      rows.forEach((row) => {
+        const wellName = row.wellName || "";
+        const rigName = row.rigName || "";
+        addRig(normalizeFlatTimeWellToken(wellName), rigName);
+        addRig(baseFlatTimeWellToken(wellName), rigName);
+      });
+
+      return lookup;
+    }
+
+    function resolveFlatTimeRigLabel(subjectWell) {
+      const exact = FLAT_TIME_RIG_LOOKUP.get(normalizeFlatTimeWellToken(subjectWell));
+      if (exact && exact.size) return Array.from(exact).sort().join(" / ");
+
+      const base = FLAT_TIME_RIG_LOOKUP.get(baseFlatTimeWellToken(subjectWell));
+      if (base && base.size) return Array.from(base).sort().join(" / ");
+
+      return "Rig not mapped";
+    }
+
+    function enrichFlatTimeDataset(dataset) {
+      if (!dataset) return dataset;
+      return {
+        ...dataset,
+        rigLabel: dataset.rigLabel || resolveFlatTimeRigLabel(dataset.subjectWell),
+      };
     }
 
     function parseCsvLine(line) {
@@ -1953,7 +1999,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     function getFlatTimeDatasets() {
-      return [...flatTimeState.baseDatasets, ...flatTimeState.uploadedDatasets];
+      return [...flatTimeState.baseDatasets, ...flatTimeState.uploadedDatasets].map(enrichFlatTimeDataset);
     }
 
     function getFlatTimeMetricKey() {
@@ -2926,7 +2972,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           return (
             '<span class="tag">' +
             '<strong>' + escapeHtml(dataset.subjectWell) + "</strong>" +
-            '<span class="tag-muted">' + escapeHtml(dataset.fileName) + "</span>" +
+            '<span class="tag-muted">' + escapeHtml(dataset.rigLabel || "Rig not mapped") + " • " + escapeHtml(dataset.fileName) + "</span>" +
             (removable ? '<button type="button" data-flat-time-remove="' + escapeHtml(dataset.id) + '">Remove</button>' : "") +
             "</span>"
           );
@@ -2950,14 +2996,25 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const topActivity = activityItems[0];
       const topGroup = groupItems[0];
       const highestDataset = datasets
-        .map((dataset) => ({ label: dataset.subjectWell, value: Number(dataset[totalKey] || 0) }))
+        .map((dataset) => ({ label: dataset.subjectWell, rigLabel: dataset.rigLabel || "Rig not mapped", value: Number(dataset[totalKey] || 0) }))
         .sort((left, right) => right.value - left.value)[0];
       const spreadCandidates = activityItems
         .map((item) => {
-          const values = datasets.map((dataset) => Number(item[dataset.id] || 0)).filter((value) => value > 0);
+          const ranked = datasets
+            .map((dataset) => ({
+              label: dataset.subjectWell,
+              rigLabel: dataset.rigLabel || "Rig not mapped",
+              value: Number(item[dataset.id] || 0),
+            }))
+            .sort((left, right) => right.value - left.value);
+          const values = ranked.map((entry) => entry.value).filter((value) => value > 0);
           return {
             label: item.label,
+            groupLabel: item.groupLabel,
+            sectionSize: item.sectionSize,
             spread: values.length >= 2 ? Math.max(...values) - Math.min(...values) : 0,
+            topDatasetLabel: ranked[0]?.label || "N/A",
+            topRigLabel: ranked[0]?.rigLabel || "Rig not mapped",
           };
         })
         .sort((left, right) => right.spread - left.spread);
@@ -2968,8 +3025,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         { label: "Benchmarks Compared", value: String(datasets.length), meta: datasets.map((dataset) => dataset.subjectWell).join(", ") },
         { label: "Top Consuming Activity", value: topActivity ? topActivity.label : "N/A", meta: topActivity ? formatNumber(topActivity.total) + " hr total" : "No activity data" },
         { label: "Largest Group", value: topGroup ? topGroup.label : "N/A", meta: topGroup ? formatNumber(topGroup.total) + " hr total" : "No group data" },
-        { label: "Highest Burden Well", value: highestDataset ? highestDataset.label : "N/A", meta: highestDataset ? formatNumber(highestDataset.value) + " hr total" : "No dataset totals" },
-        { label: "Best Reduction Opportunity", value: topSpread ? topSpread.label : "N/A", meta: topSpread ? formatNumber(topSpread.spread) + " hr spread" : "Need more than one dataset" },
+        { label: "Highest Burden Well", value: highestDataset ? highestDataset.label : "N/A", meta: highestDataset ? (highestDataset.rigLabel + " • " + formatNumber(highestDataset.value) + " hr total") : "No dataset totals" },
+        {
+          label: "Best Reduction Opportunity",
+          value: topSpread ? topSpread.topRigLabel : "N/A",
+          meta: topSpread ? (topSpread.topDatasetLabel + " • " + topSpread.label + " • " + formatNumber(topSpread.spread) + " hr spread") : "Need more than one dataset",
+        },
         { label: "Total Compared Time", value: formatNumber(overallHours), meta: metricKey === "subjectHours" ? "Subject well hours" : metricKey === "meanHours" ? "Mean hours" : "Median hours" },
       ];
 
@@ -3039,10 +3100,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       renderTable(
         ui.flatTimeOpportunityTable,
-        ["Section", "Group", "Activity", "Total Time (hr)", "Avg / Well (hr)", "Highest Well", "Gap Vs Peer Avg (hr)"],
+        ["Section", "Group", "Activity", "Total Time (hr)", "Avg / Well (hr)", "Highest Rig", "Highest Well", "Gap Vs Peer Avg (hr)"],
         activityItems.slice(0, topN).map((item) => {
           const ranked = datasets
-            .map((dataset) => ({ label: dataset.subjectWell, value: Number(item[dataset.id] || 0) }))
+            .map((dataset) => ({
+              label: dataset.subjectWell,
+              rigLabel: dataset.rigLabel || "Rig not mapped",
+              value: Number(item[dataset.id] || 0),
+            }))
             .sort((left, right) => right.value - left.value);
           const values = ranked.map((itemValue) => itemValue.value).filter((value) => value > 0);
           const topValue = ranked[0]?.value || 0;
@@ -3056,6 +3121,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             item.label,
             formatNumber(item.total),
             formatNumber(averagePerWell),
+            ranked[0]?.rigLabel || "Rig not mapped",
             ranked[0]?.label || "N/A",
             formatNumber(gapVsPeerAverage),
           ];
