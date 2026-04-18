@@ -3997,7 +3997,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         return;
       }
 
-      const wellDrivers = opportunities
+      const allWellDrivers = opportunities
         .map((opportunity) => {
           const actual = Number(opportunity.ranked.find((entry) => entry.datasetId === selectedDataset.id)?.value || 0);
           const gap = Math.max(actual - opportunity.idealTime, 0);
@@ -4011,18 +4011,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           };
         })
         .filter((item) => item.actual > 0)
-        .sort((left, right) => right.gap - left.gap || right.actual - left.actual || left.activityLabel.localeCompare(right.activityLabel))
-        .slice(0, 6);
+        .sort((left, right) => right.gap - left.gap || right.actual - left.actual || left.activityLabel.localeCompare(right.activityLabel));
 
-      const wellActualTotal = wellDrivers.reduce((sum, item) => sum + item.actual, 0);
-      const wellIdealTotal = wellDrivers.reduce((sum, item) => sum + item.idealTime, 0);
-      const wellExcess = wellDrivers.reduce((sum, item) => sum + item.gap, 0);
+      const wellDrivers = allWellDrivers.slice(0, 6);
+
+      const wellActualTotal = allWellDrivers.reduce((sum, item) => sum + item.actual, 0);
+      const wellIdealTotal = allWellDrivers.reduce((sum, item) => sum + item.idealTime, 0);
+      const wellExcess = allWellDrivers.reduce((sum, item) => sum + item.gap, 0);
 
       ui.flatTimeWellDrilldown.innerHTML =
         '<div class="metric-strip" style="margin-bottom:14px;">' +
         '<div class="metric-pill"><div class="label">Selected Well</div><div class="value"><span class="value-main">' + escapeHtml(selectedDataset.subjectWell) + '</span></div><div class="meta">' + escapeHtml(selectedDataset.rigLabel || "Rig not mapped") + '</div></div>' +
-        '<div class="metric-pill"><div class="label">Actual Flat Time</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(wellActualTotal)) + '</span><span class="value-suffix">hr</span></div><div class="meta">Across top tracked drivers</div></div>' +
-        '<div class="metric-pill"><div class="label">Ideal Flat Time</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(wellIdealTotal)) + '</span><span class="value-suffix">hr</span></div><div class="meta">Recommended achievable target</div></div>' +
+        '<div class="metric-pill"><div class="label">Actual Flat Time</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(wellActualTotal)) + '</span><span class="value-suffix">hr</span></div><div class="meta">All activities in the selected filter context</div></div>' +
+        '<div class="metric-pill"><div class="label">Ideal Flat Time</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(wellIdealTotal)) + '</span><span class="value-suffix">hr</span></div><div class="meta">Recommended achievable total for the same activities</div></div>' +
         '<div class="metric-pill"><div class="label">Recoverable Gap</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(wellExcess)) + '</span><span class="value-suffix">hr</span></div><div class="meta">Time above the recommended ideal</div></div>' +
         '</div>' +
         '<div class="drill-list">' +
@@ -4064,6 +4065,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       ui.flatTimeDrilldownNote.textContent =
         'Selected well: ' + selectedDataset.subjectWell + ' • selected activity: ' + selectedOpportunity.activityLabel + '. ' +
+        'Headline well totals are now calculated from all activities in the selected filter context, while the list below keeps only the top loss drivers. ' +
         'Depth-based drill-down is still limited because the uploaded CSVs do not contain true depth fields such as section top/bottom, measured depth or TD.';
     }
 
