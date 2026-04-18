@@ -2046,6 +2046,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const CATEGORY_ORDER = ["Stuck pipe", "Optimization", "Operational Compliance", "Well Control", "Reporting"];
     const THEME_STORAGE_KEY = "weekly-report-theme";
     const FLAT_TIME_SERIES_COLORS = ["#1264d6", "#0f766e", "#c06a0a", "#be123c", "#7c3aed", "#0891b2", "#16a34a", "#dc2626"];
+    const FLAT_TIME_ACTIVITY_TRANSLATIONS = dashboardData.activityCodeTranslations || {
+      loaded: false,
+      source: "",
+      wellSections: {},
+      operations: {},
+      activities: {},
+      generic: {},
+    };
     const FLAT_TIME_RIG_LOOKUP = buildFlatTimeRigLookup(Array.isArray(dashboardData.interventions) ? dashboardData.interventions : []);
     const flatTimeState = {
       baseDatasets: [],
@@ -3014,7 +3022,50 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     function flatTimeActionButtonHtml(type, value, label) {
-      return '<button type="button" class="table-action" data-flat-focus-' + escapeHtml(type) + '="' + escapeHtml(value) + '">' + escapeHtml(label) + '</button>';
+      const title = type === "activity" ? getFlatTimeActivityTooltip(label) : "";
+      return '<button type="button" class="table-action" data-flat-focus-' + escapeHtml(type) + '="' + escapeHtml(value) + '"' + (title ? ' title="' + escapeHtml(title) + '"' : "") + '>' + escapeHtml(label) + '</button>';
+    }
+
+    function getFlatTimeActivityTooltip(activityLabel) {
+      const label = String(activityLabel || "").trim();
+      if (!label) return "";
+
+      const translations = FLAT_TIME_ACTIVITY_TRANSLATIONS || {};
+      const wellSections = translations.wellSections || {};
+      const operations = translations.operations || {};
+      const activities = translations.activities || {};
+      const generic = translations.generic || {};
+      const parts = label.split("-").filter(Boolean);
+      const lines = [];
+
+      if (parts.length >= 3) {
+        const sectionCode = parts[0];
+        const operationCode = parts[1];
+        const activityCode = parts[parts.length - 1];
+
+        if (wellSections[sectionCode]) {
+          lines.push("Section " + sectionCode + ': ' + wellSections[sectionCode]);
+        }
+        if (operations[operationCode]) {
+          lines.push("Operation " + operationCode + ': ' + operations[operationCode]);
+        }
+        if (activities[activityCode]) {
+          lines.push("Activity " + activityCode + ': ' + activities[activityCode]);
+        } else if (generic[activityCode]) {
+          lines.push("Activity " + activityCode + ': ' + generic[activityCode]);
+        }
+      }
+
+      if (!lines.length && generic[label]) {
+        lines.push(generic[label]);
+      }
+
+      return lines.join("\n");
+    }
+
+    function flatTimeActivityLabelHtml(label) {
+      const tooltip = getFlatTimeActivityTooltip(label);
+      return '<span' + (tooltip ? ' title="' + escapeHtml(tooltip) + '"' : "") + '>' + escapeHtml(label) + '</span>';
     }
 
     function flatTimeTrendHtml(excessHours) {
@@ -4100,7 +4151,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       ui.flatTimeActivityDrilldown.innerHTML =
         '<div class="metric-strip" style="margin-bottom:14px;">' +
-        '<div class="metric-pill"><div class="label">Selected Activity</div><div class="value"><span class="value-main">' + escapeHtml(selectedOpportunity.activityLabel) + '</span></div><div class="meta">' + escapeHtml(selectedOpportunity.groupLabel + " • " + formatFlatTimeSectionSize(selectedOpportunity.sectionSize)) + '</div></div>' +
+        '<div class="metric-pill"><div class="label">Selected Activity</div><div class="value"><span class="value-main">' + flatTimeActivityLabelHtml(selectedOpportunity.activityLabel) + '</span></div><div class="meta">' + escapeHtml(selectedOpportunity.groupLabel + " • " + formatFlatTimeSectionSize(selectedOpportunity.sectionSize)) + '</div></div>' +
         '<div class="metric-pill"><div class="label">Recommended Ideal</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(selectedOpportunity.idealTime)) + '</span><span class="value-suffix">' + escapeHtml("hr / " + formatNumber(selectedOpportunity.idealTime / 24) + " d") + '</span></div><div class="meta">' + escapeHtml(selectedOpportunity.idealRule) + '</div></div>' +
         '<div class="metric-pill"><div class="label">Confidence</div><div class="value">' + confidenceBadgeHtml(selectedOpportunity.confidence) + '</div><div class="meta">' + escapeHtml(selectedOpportunity.variability + " variability • sample " + selectedOpportunity.occurrenceCount) + '</div></div>' +
         '<div class="metric-pill"><div class="label">Observed Range</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(selectedOpportunity.fastestTime)) + " - " + escapeHtml(formatNumber(Math.max(...selectedOpportunity.values, 0))) + '</span><span class="value-suffix">' + escapeHtml("hr / " + formatNumber(selectedOpportunity.fastestTime / 24) + " - " + formatNumber(Math.max(...selectedOpportunity.values, 0) / 24) + " d") + '</span></div><div class="meta">Fastest to slowest observed execution</div></div>' +
@@ -4222,7 +4273,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       const headerHtml =
         '<tr><th>Well</th>' +
-        columns.map((column) => '<th title="' + escapeHtml(column.activityLabel) + '">' + escapeHtml(column.activityLabel) + '</th>').join("") +
+        columns.map((column) => '<th title="' + escapeHtml(getFlatTimeActivityTooltip(column.activityLabel) || column.activityLabel) + '">' + escapeHtml(column.activityLabel) + '</th>').join("") +
         '</tr>';
       const bodyHtml = rows.map((dataset) => {
         const cells = columns.map((opportunity) => {
@@ -4297,13 +4348,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       const cards = [
         { label: "Benchmarks Compared", value: String(datasets.length), meta: datasets.map((dataset) => dataset.subjectWell).join(", ") },
-        { label: "Top Consuming Activity", value: topActivity ? topActivity.label : "N/A", meta: topActivity ? formatNumber(topActivity.total) + " hr total" : "No activity data" },
+        { label: "Top Consuming Activity", value: topActivity ? topActivity.label : "N/A", valueHtml: topActivity ? flatTimeActivityLabelHtml(topActivity.label) : escapeHtml("N/A"), meta: topActivity ? formatNumber(topActivity.total) + " hr total" : "No activity data" },
         { label: "Largest Group", value: topGroup ? topGroup.label : "N/A", meta: topGroup ? formatNumber(topGroup.total) + " hr total" : "No group data" },
         { label: "Highest Burden Well", value: highestDataset ? highestDataset.label : "N/A", meta: highestDataset ? (highestDataset.rigLabel + " • " + formatNumber(highestDataset.value) + " hr total") : "No dataset totals" },
         {
           label: "Best Reduction Opportunity",
           value: topSpread ? topSpread.topEntry.rigLabel : "N/A",
           meta: topSpread ? (topSpread.topEntry.label + " • " + topSpread.activityLabel + " • gap " + formatNumber(topSpread.gapToIdeal) + " hr vs ideal") : "Need more than one dataset",
+          metaHtml: topSpread ? (escapeHtml(topSpread.topEntry.label + " • ") + flatTimeActivityLabelHtml(topSpread.activityLabel) + escapeHtml(" • gap " + formatNumber(topSpread.gapToIdeal) + " hr vs ideal")) : escapeHtml("Need more than one dataset"),
         },
         {
           label: "Total Recoverable Hours",
@@ -4313,6 +4365,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         {
           label: "Most Reliable Ideal",
           value: mostReliableIdeal ? mostReliableIdeal.activityLabel : "N/A",
+          valueHtml: mostReliableIdeal ? flatTimeActivityLabelHtml(mostReliableIdeal.activityLabel) : escapeHtml("N/A"),
           meta: mostReliableIdeal ? (mostReliableIdeal.confidence + " confidence • target " + formatNumber(mostReliableIdeal.idealTime) + " hr") : "Need at least 3 wells for a strong benchmark",
         },
         { label: "Total Compared Time", value: formatNumber(overallHours), meta: metricKey === "subjectHours" ? "Subject well hours" : metricKey === "meanHours" ? "Mean hours" : "Median hours" },
@@ -4322,8 +4375,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .map((card) => (
           '<div class="metric-pill">' +
           '<div class="label">' + escapeHtml(card.label) + "</div>" +
-          '<div class="value"><span class="value-main">' + escapeHtml(card.value) + '</span></div>' +
-          '<div class="meta">' + escapeHtml(card.meta) + "</div>" +
+          '<div class="value"><span class="value-main">' + (card.valueHtml || escapeHtml(card.value)) + '</span></div>' +
+          '<div class="meta">' + (card.metaHtml || escapeHtml(card.meta)) + "</div>" +
           "</div>"
         ))
         .join("");
@@ -4457,7 +4510,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           escapeHtml(formatNumber(row.idealTotal)),
           flatTimeTrendHtml(row.excessTotal),
           row.topDrivers.length
-            ? row.topDrivers.map((driver) => escapeHtml(driver.activity + " (" + driver.group + ", +" + formatNumber(driver.gap) + " hr)")).join("<br>")
+            ? row.topDrivers.map((driver) => flatTimeActivityLabelHtml(driver.activity) + escapeHtml(" (" + driver.group + ", +" + formatNumber(driver.gap) + " hr)")).join("<br>")
             : escapeHtml("No excess detected"),
         ])
       );
@@ -5485,12 +5538,71 @@ def load_flat_time_directory(directory: Path) -> dict[str, Any]:
     return {"datasets": datasets}
 
 
+def load_activity_code_translations() -> dict[str, Any]:
+    candidates = [
+        Path.cwd() / "Aramco Activity Codes.csv",
+        Path(__file__).with_name("Aramco Activity Codes.csv"),
+        Path.home() / "Downloads" / "Aramco Activity Codes.csv",
+    ]
+
+    source_path = next((path for path in candidates if path.exists()), None)
+    if source_path is None:
+        return {
+            "loaded": False,
+            "source": "",
+            "wellSections": {},
+            "operations": {},
+            "activities": {},
+            "generic": {},
+        }
+
+    well_sections: dict[str, str] = {}
+    operations: dict[str, str] = {}
+    activities: dict[str, str] = {}
+    generic: dict[str, str] = {}
+
+    try:
+        with source_path.open(newline="", encoding="utf-8-sig") as handle:
+            for row in csv.DictReader(handle):
+                code = (row.get("Client Code") or "").strip()
+                description = (row.get("Client Code Description") or "").strip()
+                code_type = (row.get("Corva Code Type") or "").strip().lower()
+                if not code or not description:
+                    continue
+                generic.setdefault(code, description)
+                if code_type == "well sections":
+                    well_sections.setdefault(code, description)
+                elif code_type == "operation":
+                    operations.setdefault(code, description)
+                elif code_type == "activity":
+                    activities.setdefault(code, description)
+    except OSError:
+        return {
+            "loaded": False,
+            "source": "",
+            "wellSections": {},
+            "operations": {},
+            "activities": {},
+            "generic": {},
+        }
+
+    return {
+        "loaded": True,
+        "source": source_path.name,
+        "wellSections": well_sections,
+        "operations": operations,
+        "activities": activities,
+        "generic": generic,
+    }
+
+
 def build_dashboard_payload(
     spreadsheet_name: str,
     generated_at: str,
     intervention_rows: list[dict[str, Any]],
     cost_avoidance_rows: list[dict[str, Any]],
     flat_time_payload: dict[str, Any] | None = None,
+    activity_code_translations: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     dates = [row["date"] for row in intervention_rows if row["date"]]
     payload = {
@@ -5517,6 +5629,8 @@ def build_dashboard_payload(
     }
     if flat_time_payload is not None:
         payload["flatTime"] = flat_time_payload
+    if activity_code_translations is not None:
+        payload["activityCodeTranslations"] = activity_code_translations
     return payload
 
 
@@ -5546,6 +5660,7 @@ def build_report_html(spreadsheet_name: str, spreadsheet_bytes: bytes, flat_time
         intervention_rows=intervention_rows,
         cost_avoidance_rows=cost_avoidance_rows,
         flat_time_payload=flat_time_payload,
+        activity_code_translations=load_activity_code_translations(),
     )
 
     return build_html(
@@ -5571,6 +5686,7 @@ def build_intervention_csv_report_html(csv_name: str, csv_bytes: bytes, flat_tim
         intervention_rows=intervention_rows,
         cost_avoidance_rows=[],
         flat_time_payload=flat_time_payload,
+        activity_code_translations=load_activity_code_translations(),
     )
 
     return build_html(
@@ -5589,6 +5705,7 @@ def build_empty_report_html(flat_time_payload: dict[str, Any] | None = None) -> 
         intervention_rows=[],
         cost_avoidance_rows=[],
         flat_time_payload=flat_time_payload if flat_time_payload is not None else {"datasets": []},
+        activity_code_translations=load_activity_code_translations(),
     )
 
     return build_html(

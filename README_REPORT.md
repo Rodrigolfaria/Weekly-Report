@@ -4,6 +4,7 @@ O app agora suporta dois fluxos:
 
 - upload de `.xlsx` ou `Intervention Log .csv` pela interface
 - abertura do dashboard sem workbook, para usar a aba `Flat Time` somente com `.csv`
+- traducao de atividades no `Flat Time` por hover, usando `Aramco Activity Codes.csv` na raiz do app
 
 ## Como funciona
 
@@ -79,6 +80,12 @@ Observacoes:
 2. ou use `Open Dashboard Without Workbook` para entrar direto no app
 3. sem workbook, a aba `Flat Time` continua utilizavel com upload de `.csv`
 4. use as abas `Interactive Dashboard`, `Weekly Report` e `Flat Time`
+
+## Traducao de atividades no Flat Time
+
+- se o arquivo `Aramco Activity Codes.csv` estiver na raiz do app, o dashboard usa esse arquivo automaticamente
+- as descricoes aparecem no `hover` dos nomes das atividades na aba `Flat Time`
+- em deploy, mantenha esse arquivo junto do projeto para nao depender de upload manual
 
 ## Arquivos principais
 
