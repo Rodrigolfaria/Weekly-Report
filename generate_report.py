@@ -867,6 +867,27 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       border-color: rgba(239, 68, 68, 0.28);
     }
 
+    .trend-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .trend-indicator.fast {
+      color: #166534;
+    }
+
+    .trend-indicator.slow {
+      color: #991b1b;
+    }
+
+    .trend-indicator .arrow {
+      font-size: 13px;
+      line-height: 1;
+    }
+
     .table-action {
       appearance: none;
       background: rgba(18, 100, 214, 0.08);
@@ -2948,6 +2969,21 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       return '<button type="button" class="table-action" data-flat-focus-' + escapeHtml(type) + '="' + escapeHtml(value) + '">' + escapeHtml(label) + '</button>';
     }
 
+    function flatTimeTrendHtml(excessHours) {
+      const value = Number(excessHours || 0);
+      const isSlow = value > 0.01;
+      const tone = isSlow ? "slow" : "fast";
+      const arrow = isSlow ? "▲" : "▼";
+      const label = isSlow ? "slower" : "faster";
+      return (
+        '<span class="trend-indicator ' + tone + '">' +
+        '<span>' + escapeHtml(formatNumber(value)) + '</span>' +
+        '<span class="arrow">' + arrow + '</span>' +
+        '<span>' + label + '</span>' +
+        '</span>'
+      );
+    }
+
     function isYesLike(value) {
       return ["yes", "y", "true", "confirmed"].includes(String(value || "").trim().toLowerCase());
     }
@@ -4362,7 +4398,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           flatTimeActionButtonHtml("well", row.wellLabel, row.wellLabel),
           escapeHtml(formatNumber(row.actualTotal)),
           escapeHtml(formatNumber(row.idealTotal)),
-          escapeHtml(formatNumber(row.excessTotal)),
+          flatTimeTrendHtml(row.excessTotal),
           row.topDrivers.length
             ? row.topDrivers.map((driver) => escapeHtml(driver.activity + " (" + driver.group + ", +" + formatNumber(driver.gap) + " hr)")).join("<br>")
             : escapeHtml("No excess detected"),
