@@ -3,15 +3,15 @@
 O app agora suporta dois fluxos:
 
 - upload de `.xlsx` pela interface
-- abertura de um `.xlsx` que ja esteja na raiz do app
+- abertura do dashboard sem workbook, para usar a aba `Flat Time` somente com `.csv`
 
 ## Como funciona
 
 - o usuario abre o servidor local
-- faz upload do arquivo `.xlsx` pela interface ou abre um workbook ja presente na raiz do app
+- faz upload do arquivo `.xlsx` pela interface ou abre o dashboard sem workbook
 - o dashboard e o `Weekly Report` sao gerados automaticamente
 - os arquivos enviados nao ficam salvos no servidor
-- workbooks que estiverem na raiz do app podem ser usados como exemplo ou fallback em ambientes corporativos com upload bloqueado
+- a aba `Flat Time` pode funcionar so com `.csv`, mesmo sem workbook carregado
 
 ## Rodar o app
 
@@ -76,8 +76,8 @@ Observacoes:
 ## Fluxo de uso
 
 1. clique em `Upload And Open Report` e escolha um `.xlsx`
-2. ou use `Open bundled workbook` para abrir um `.xlsx` da raiz do app
-3. o sistema gera o dashboard automaticamente
+2. ou use `Open Dashboard Without Workbook` para entrar direto no app
+3. sem workbook, a aba `Flat Time` continua utilizavel com upload de `.csv`
 4. use as abas `Interactive Dashboard`, `Weekly Report` e `Flat Time`
 
 ## Arquivos principais
@@ -92,4 +92,5 @@ Observacoes:
 
 - o app nao precisa mais que a planilha fique dentro do projeto
 - o arquivo enviado e processado somente em memoria
-- se quiser disponibilizar um exemplo sem upload, voce pode manter um `.xlsx` na raiz do app
+- nenhum `.xlsx` fica embutido no servidor
+- em ambientes corporativos, `.csv` normalmente passa com menos restricao porque e texto simples, enquanto `.xlsx` e um pacote Office compactado e costuma ser inspecionado por antivirus, DLP, filtro de upload e politicas anti-malware

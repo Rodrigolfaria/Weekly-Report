@@ -5417,6 +5417,24 @@ def build_report_html(spreadsheet_name: str, spreadsheet_bytes: bytes, flat_time
     )
 
 
+def build_empty_report_html(flat_time_payload: dict[str, Any] | None = None) -> str:
+    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    payload = build_dashboard_payload(
+        spreadsheet_name="No workbook loaded",
+        generated_at=generated_at,
+        intervention_rows=[],
+        cost_avoidance_rows=[],
+        flat_time_payload=flat_time_payload if flat_time_payload is not None else {"datasets": []},
+    )
+
+    return build_html(
+        title="Interactive Report - No workbook loaded",
+        source_file="No workbook loaded",
+        generated_at=generated_at,
+        payload=payload,
+    )
+
+
 def build_report(spreadsheet: Path, output_path: Path) -> None:
     html_output = build_report_html(
         spreadsheet.name,

@@ -12,26 +12,15 @@ from email.parser import BytesParser
 from email.policy import default
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
-from generate_report import build_report_html
+from generate_report import build_empty_report_html, build_report_html
 
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 BASIC_AUTH_USER = os.getenv("BASIC_AUTH_USER", "")
 BASIC_AUTH_PASSWORD = os.getenv("BASIC_AUTH_PASSWORD", "")
 ALLOWED_IPS = [item.strip() for item in os.getenv("ALLOWED_IPS", "").split(",") if item.strip()]
-ROOT_DIR = Path(__file__).resolve().parent
-
-
-def list_bundled_spreadsheets() -> list[Path]:
-    return sorted(
-        path
-        for path in ROOT_DIR.glob("*.xlsx")
-        if path.is_file() and not path.name.startswith("~$")
-    )
-
 
 def parse_uploaded_spreadsheet(headers, body: bytes) -> tuple[str, bytes] | tuple[None, None]:
     content_type = headers.get("Content-Type", "")
@@ -62,50 +51,6 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
     alert_html = ""
     if message:
         alert_html = f'<div class="alert{" is-error" if is_error else ""}">{html.escape(message)}</div>'
-
-    bundled_files = list_bundled_spreadsheets()
-    bundled_hero_html = ""
-    bundled_html = ""
-    if bundled_files:
-        bundled_hero_html = """
-      <div class="bundled-hero">
-        <div class="bundled-hero-title">Blocked from uploading?</div>
-        <div class="bundled-hero-actions">
-""" + "".join(
-            f"""
-          <form class="bundled-hero-form" method="post" action="/open-bundled">
-            <input type="hidden" name="filename" value="{html.escape(path.name)}">
-            <button class="upload-button bundled-hero-button" type="submit">
-              Open {html.escape(path.name)}
-            </button>
-          </form>
-"""
-            for path in bundled_files
-        ) + """
-        </div>
-      </div>
-"""
-        bundled_html = """
-    <section class="section">
-      <h2>Use bundled workbook</h2>
-      <p>If your company browser blocks file uploads, you can open a workbook that already exists in the app root.</p>
-      <div class="bundled-list">
-""" + "".join(
-            f"""
-        <form class="bundled-card" method="post" action="/open-bundled">
-          <input type="hidden" name="filename" value="{html.escape(path.name)}">
-          <div>
-            <strong>{html.escape(path.name)}</strong>
-            <div class="bundled-meta">Loaded directly from the application root.</div>
-          </div>
-          <button class="upload-button bundled-button" type="submit">Open bundled workbook</button>
-        </form>
-"""
-            for path in bundled_files
-        ) + """
-      </div>
-    </section>
-"""
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -215,35 +160,6 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
       font-size: 14px;
       color: rgba(255, 255, 255, 0.82);
     }}
-    .bundled-hero {{
-      display: grid;
-      gap: 10px;
-      margin-top: 16px;
-      padding: 14px 16px;
-      border-radius: 18px;
-      background: rgba(255, 255, 255, 0.12);
-      border: 1px solid rgba(255, 255, 255, 0.18);
-    }}
-    .bundled-hero-title {{
-      font-size: 13px;
-      font-weight: 800;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      color: rgba(255, 255, 255, 0.86);
-    }}
-    .bundled-hero-actions {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-    }}
-    .bundled-hero-form {{
-      margin: 0;
-    }}
-    .bundled-hero-button {{
-      background: rgba(255, 255, 255, 0.96);
-      color: #102033;
-      border-color: transparent;
-    }}
     .theme-toggle-wrap {{
       display: grid;
       gap: 10px;
@@ -305,31 +221,25 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
       border-color: #f6caca;
       color: var(--danger-text);
     }}
-    .bundled-list {{
-      display: grid;
-      gap: 14px;
+    .home-actions {{
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
       margin-top: 16px;
     }}
-    .bundled-card {{
-      display: flex;
-      justify-content: space-between;
+    .secondary-button {{
+      display: inline-flex;
       align-items: center;
-      gap: 16px;
-      flex-wrap: wrap;
-      padding: 16px 18px;
-      border-radius: 18px;
-      border: 1px solid var(--line);
-      background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(246,250,255,0.95));
-    }}
-    .bundled-meta {{
-      margin-top: 6px;
-      font-size: 14px;
-      color: var(--muted);
-    }}
-    .bundled-button {{
-      color: var(--text);
-      background: #eef4ff;
-      border-color: #c8d8ef;
+      justify-content: center;
+      padding: 12px 16px;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      background: rgba(255, 255, 255, 0.08);
+      color: white;
+      text-decoration: none;
+      font-weight: 700;
+      font: inherit;
+      cursor: pointer;
     }}
     code {{
       background: #eef4ff;
@@ -365,27 +275,6 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
       color: #f5f5f5;
       border-color: #2c2e33;
     }}
-    body.theme-corona .bundled-card {{
-      background: #111318;
-      border-color: #2c2e33;
-    }}
-    body.theme-corona .bundled-hero {{
-      background: #0f1015;
-      border-color: #2c2e33;
-    }}
-    body.theme-corona .bundled-hero-button {{
-      color: #f5f5f5;
-      background: linear-gradient(135deg, #0090e7, #0069aa);
-      border-color: transparent;
-    }}
-    body.theme-corona .bundled-meta {{
-      color: #a1aab8;
-    }}
-    body.theme-corona .bundled-button {{
-      color: #f5f5f5;
-      background: linear-gradient(135deg, #0090e7, #0069aa);
-      border-color: transparent;
-    }}
     body.theme-corona .theme-toggle-thumb {{
       transform: translateX(100%);
       background: linear-gradient(135deg, #0090e7, #0069aa);
@@ -394,6 +283,10 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
     body.theme-corona .upload-button {{
       background: linear-gradient(135deg, #0090e7, #0069aa);
       border-color: transparent;
+    }}
+    body.theme-corona .secondary-button {{
+      background: rgba(255, 255, 255, 0.06);
+      border-color: #2c2e33;
     }}
     body.theme-corona code {{
       background: #0f1015;
@@ -421,7 +314,7 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
         <div>
           <h1>Weekly Report Automation</h1>
           <p>Upload an .xlsx file and the system generates the dashboard immediately.</p>
-          <p>No uploaded spreadsheet is stored on the server after processing.</p>
+          <p>You can also open the dashboard without a workbook and use the Flat Time tab with CSV files only.</p>
         </div>
         <div class="theme-toggle-wrap">
           <div class="theme-toggle-row">
@@ -440,16 +333,16 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
         </div>
         <div class="upload-help">The file is processed in memory only, so no Excel data is kept on the server.</div>
       </form>
-      {bundled_hero_html}
+      <div class="home-actions">
+        <a class="secondary-button" href="/dashboard">Open Dashboard Without Workbook</a>
+      </div>
       {alert_html}
     </section>
-
-    {bundled_html}
 
     <section class="section">
       <h2>How to use</h2>
       <p>1. <code>upload a .xlsx file</code>.</p>
-      <p>2. or open a <code>bundled workbook from the app root</code>.</p>
+      <p>2. or open <code>the dashboard without a workbook</code> and use <code>Flat Time</code> with CSVs.</p>
       <p>3. Review the dashboard in the browser.</p>
       <p>4. Uploaded files are not stored after processing.</p>
     </section>
@@ -570,6 +463,13 @@ class ReportHandler(BaseHTTPRequestHandler):
             self._send_text(HTTPStatus.OK, render_home_page())
             return
 
+        if parsed.path == "/dashboard":
+            self._send_text(
+                HTTPStatus.OK,
+                build_empty_report_html(flat_time_payload={"datasets": []}),
+            )
+            return
+
         if parsed.path == "/health":
             self._send_json({"status": "ok"})
             return
@@ -587,42 +487,8 @@ class ReportHandler(BaseHTTPRequestHandler):
             self._send_auth_challenge()
             return
 
-        if parsed.path not in {"/upload", "/open-bundled"}:
+        if parsed.path != "/upload":
             self._send_text(HTTPStatus.NOT_FOUND, "<h1>404</h1><p>Page not found.</p>")
-            return
-
-        if parsed.path == "/open-bundled":
-            try:
-                content_length = int(self.headers.get("Content-Length", "0"))
-            except ValueError:
-                content_length = 0
-
-            body = self.rfile.read(content_length) if content_length > 0 else b""
-            form = parse_qs(body.decode("utf-8", errors="ignore"))
-            filename = (form.get("filename") or [""])[0]
-            selected_path = ROOT_DIR / Path(filename).name
-
-            if not filename or not selected_path.exists() or selected_path.parent != ROOT_DIR:
-                self._send_text(
-                    HTTPStatus.BAD_REQUEST,
-                    render_home_page("Could not find the selected bundled workbook.", True),
-                )
-                return
-
-            try:
-                html_report = build_report_html(
-                    selected_path.name,
-                    selected_path.read_bytes(),
-                    flat_time_payload={"datasets": []},
-                )
-            except Exception as exc:  # noqa: BLE001
-                self._send_text(
-                    HTTPStatus.INTERNAL_SERVER_ERROR,
-                    render_home_page(f"Could not process the bundled workbook: {exc}", True),
-                )
-                return
-
-            self._send_text(HTTPStatus.OK, html_report)
             return
 
         try:
