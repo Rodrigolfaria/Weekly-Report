@@ -1822,6 +1822,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <div class="report-card">
               <h3>Section Benchmark Chart</h3>
               <p class="report-note">Compares each section average against the recommended ideal and shows the spread to recover.</p>
+              <div class="legend">
+                <span class="legend-item"><span class="legend-dot" style="background:#1264d6;"></span>Actual avg</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#0f766e;"></span>Recommended ideal</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#c06a0a;"></span>Spread</span>
+              </div>
               <div id="flat-time-section-benchmark-chart"></div>
             </div>
           </div>
@@ -3792,6 +3797,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           });
 
           drivers.sort((left, right) => right.gap - left.gap || left.activity.localeCompare(right.activity));
+          const topDrivers = drivers.slice(0, 3);
+          const otherDriversGap = Math.max(
+            drivers.slice(3).reduce((sum, driver) => sum + driver.gap, 0),
+            0
+          );
 
           return {
             rigLabel: dataset.rigLabel || "Rig not mapped",
@@ -3800,7 +3810,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             idealTotal,
             excessTotal,
             topDriver: drivers[0] || null,
-            topDrivers: drivers.slice(0, 3),
+            topDrivers,
+            otherDriversGap,
           };
         })
         .sort((left, right) => right.excessTotal - left.excessTotal || right.actualTotal - left.actualTotal || left.wellLabel.localeCompare(right.wellLabel));
@@ -4149,7 +4160,21 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           gap: Math.max(entry.value - selectedOpportunity.idealTime, 0),
         }));
 
+      const activityOptions = opportunities
+        .slice()
+        .sort((left, right) => left.activityLabel.localeCompare(right.activityLabel))
+        .map((opportunity) => (
+          '<option value="' + escapeHtml(opportunity.activityLabel) + '"' +
+          (opportunity.activityLabel === selectedOpportunity.activityLabel ? " selected" : "") +
+          '>' + escapeHtml(opportunity.activityLabel) + "</option>"
+        ))
+        .join("");
+
       ui.flatTimeActivityDrilldown.innerHTML =
+        '<div class="field" style="margin-bottom:14px; max-width:340px;">' +
+        '<label for="flat-time-drilldown-activity-select">Selected Activity</label>' +
+        '<select id="flat-time-drilldown-activity-select">' + activityOptions + '</select>' +
+        '</div>' +
         '<div class="metric-strip" style="margin-bottom:14px;">' +
         '<div class="metric-pill"><div class="label">Selected Activity</div><div class="value"><span class="value-main">' + flatTimeActivityLabelHtml(selectedOpportunity.activityLabel) + '</span></div><div class="meta">' + escapeHtml(selectedOpportunity.groupLabel + " • " + formatFlatTimeSectionSize(selectedOpportunity.sectionSize)) + '</div></div>' +
         '<div class="metric-pill"><div class="label">Recommended Ideal</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(selectedOpportunity.idealTime)) + '</span><span class="value-suffix">' + escapeHtml("hr / " + formatNumber(selectedOpportunity.idealTime / 24) + " d") + '</span></div><div class="meta">' + escapeHtml(selectedOpportunity.idealRule) + '</div></div>' +
@@ -4166,6 +4191,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           '</tr>'
         ).join('') +
         '</tbody></table></div>';
+
+      const drilldownSelect = document.getElementById("flat-time-drilldown-activity-select");
+      if (drilldownSelect) {
+        drilldownSelect.addEventListener("change", () => {
+          flatTimeState.focusActivity = drilldownSelect.value || "";
+          renderFlatTime();
+        });
+      }
 
       ui.flatTimeDrilldownNote.textContent =
         'Selected well: ' + selectedDataset.subjectWell + ' • selected activity: ' + selectedOpportunity.activityLabel + '. ' +
@@ -4509,8 +4542,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           escapeHtml(formatNumber(row.actualTotal)),
           escapeHtml(formatNumber(row.idealTotal)),
           flatTimeTrendHtml(row.excessTotal),
-          row.topDrivers.length
-            ? row.topDrivers.map((driver) => flatTimeActivityLabelHtml(driver.activity) + escapeHtml(" (" + driver.group + ", +" + formatNumber(driver.gap) + " hr)")).join("<br>")
+          row.topDrivers.length || row.otherDriversGap > 0
+            ? [
+                ...row.topDrivers.map((driver) => flatTimeActivityLabelHtml(driver.activity) + escapeHtml(" (" + driver.group + ", +" + formatNumber(driver.gap) + " hr)")),
+                ...(row.otherDriversGap > 0 ? ['<span style="color:var(--muted); font-weight:700;">' + escapeHtml("Other drivers (+" + formatNumber(row.otherDriversGap) + " hr)") + '</span>'] : []),
+              ].join("<br>")
             : escapeHtml("No excess detected"),
         ])
       );
