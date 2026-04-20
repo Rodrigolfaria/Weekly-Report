@@ -1812,7 +1812,53 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           </div>
         </section>
 
-        <section class="panel section" data-flat-mode="executive engineering">
+        <section class="panel section" data-flat-mode="executive">
+          <div class="report-card">
+            <h3>All Wells Summary by Section</h3>
+            <p class="report-note">Breaks every loaded well into hole sections and shows the three most time-consuming activities inside each section.</p>
+            <div id="flat-time-all-wells-sections"></div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="executive">
+          <div class="flat-time-chart-stack">
+            <div class="report-card">
+              <h3>Selected Well by Section</h3>
+              <p class="report-note">Section-by-section comparison for the selected well, highlighting actual time, ideal target and recoverable gap with the top section drivers.</p>
+              <div id="flat-time-selected-well-sections"></div>
+            </div>
+            <div class="report-card">
+              <h3>Selected Well vs Loaded Offsets</h3>
+              <p class="report-note">Compares the selected well section by section against the loaded offset average and the best offset observed in the current benchmark set.</p>
+              <div id="flat-time-offset-comparison"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="executive">
+          <div class="report-card">
+            <h3>Section Heat Map</h3>
+            <p class="report-note">Shows section-level excess time by well so repeated problem sections become obvious at a glance.</p>
+            <div id="flat-time-section-heatmap"></div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="executive">
+          <div class="flat-time-chart-stack">
+            <div class="report-card">
+              <h3>Summary of Where Time Can Be Saved</h3>
+              <p class="report-note">Executive summary of recoverable hours and days by section, with the most credible recurring activity to attack next.</p>
+              <div id="flat-time-savings-summary"></div>
+            </div>
+            <div class="report-card">
+              <h3>Executive Explanation</h3>
+              <p class="report-note">Narrative explanation of why the system selected the current opportunities and how the time can be recovered.</p>
+              <div id="flat-time-narrative"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="engineering">
           <div class="flat-time-chart-stack">
             <div class="report-card">
               <h3>Well vs Ideal Waterfall</h3>
@@ -1832,7 +1878,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           </div>
         </section>
 
-        <section class="panel section" data-flat-mode="executive engineering">
+        <section class="panel section" data-flat-mode="engineering">
           <div class="flat-time-chart-stack">
             <div class="report-card">
               <h3>Rig Benchmark Summary</h3>
@@ -1862,7 +1908,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           </div>
         </section>
 
-        <section class="panel section" data-flat-mode="executive engineering">
+        <section class="panel section" data-flat-mode="engineering">
           <div class="report-card">
             <h3>Activity Benchmark Table</h3>
             <p class="report-note">Engineering view of each activity, including sample size, distribution, recommended ideal time, variability and recoverable hours.</p>
@@ -1870,7 +1916,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           </div>
         </section>
 
-        <section class="panel section" data-flat-mode="executive engineering">
+        <section class="panel section" data-flat-mode="engineering">
           <div class="report-card">
             <h3>Drill-down Explorer</h3>
             <p class="report-note" id="flat-time-drilldown-note">Click a well or activity in the tables above to open the benchmark, peer comparison and ideal-time logic.</p>
@@ -1925,7 +1971,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           </div>
         </section>
 
-        <section class="panel section" data-flat-mode="executive engineering">
+        <section class="panel section" data-flat-mode="engineering">
           <div class="report-card">
             <h3>Perfect Flat Time vs Wells</h3>
             <p class="report-note">Compares the ideal cumulative flat time curve against the actual wells. Days are cumulative on X and depth progression is represented by section sequence on Y.</p>
@@ -2018,6 +2064,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       flatTimeSummary: document.getElementById("flat-time-summary"),
       flatTimeWellRanking: document.getElementById("flat-time-well-ranking"),
       flatTimeParetoChart: document.getElementById("flat-time-pareto-chart"),
+      flatTimeAllWellsSections: document.getElementById("flat-time-all-wells-sections"),
+      flatTimeSelectedWellSections: document.getElementById("flat-time-selected-well-sections"),
+      flatTimeOffsetComparison: document.getElementById("flat-time-offset-comparison"),
+      flatTimeSectionHeatmap: document.getElementById("flat-time-section-heatmap"),
+      flatTimeSavingsSummary: document.getElementById("flat-time-savings-summary"),
+      flatTimeNarrative: document.getElementById("flat-time-narrative"),
       flatTimeWaterfallChart: document.getElementById("flat-time-waterfall-chart"),
       flatTimeSectionBenchmarkChart: document.getElementById("flat-time-section-benchmark-chart"),
       flatTimeRigSummary: document.getElementById("flat-time-rig-summary"),
@@ -3940,6 +3992,333 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .sort((left, right) => right.totalRecoverableHours - left.totalRecoverableHours || right.wellsImpacted - left.wellsImpacted || left.activityLabel.localeCompare(right.activityLabel));
     }
 
+    function buildSectionBreakdownMap(datasets, opportunities, metricKey) {
+      const opportunityMap = new Map(opportunities.map((opportunity) => [opportunity.activityLabel, opportunity]));
+      const breakdownMap = new Map();
+
+      datasets.forEach((dataset) => {
+        const sectionMap = new Map();
+        dataset.groups.forEach((group) => {
+          group.activities.forEach((activity) => {
+            const sectionSize = activity.sectionSize || extractFlatTimeSectionSize(activity.activity);
+            if (!sectionSize || sectionSize === "__no_section__") return;
+            const actual = Number(activity[metricKey] || 0);
+            if (actual <= 0) return;
+
+            const opportunity = opportunityMap.get(activity.activity);
+            const ideal = Number(opportunity?.idealTime || 0);
+            const gap = Math.max(actual - ideal, 0);
+
+            if (!sectionMap.has(sectionSize)) {
+              sectionMap.set(sectionSize, {
+                sectionSize,
+                label: formatFlatTimeSectionSize(sectionSize),
+                actualTotal: 0,
+                idealTotal: 0,
+                gapTotal: 0,
+                activities: [],
+              });
+            }
+
+            const bucket = sectionMap.get(sectionSize);
+            bucket.actualTotal += actual;
+            bucket.idealTotal += ideal;
+            bucket.gapTotal += gap;
+            bucket.activities.push({
+              activityLabel: activity.activity,
+              groupLabel: group.groupName,
+              actual,
+              idealTime: ideal,
+              gap,
+              confidence: opportunity?.confidence || "Low",
+            });
+          });
+        });
+
+        const sections = Array.from(sectionMap.values())
+          .map((section) => {
+            const topActivities = section.activities
+              .slice()
+              .sort((left, right) => right.actual - left.actual || right.gap - left.gap || left.activityLabel.localeCompare(right.activityLabel))
+              .slice(0, 3);
+            const topGapActivities = section.activities
+              .slice()
+              .sort((left, right) => right.gap - left.gap || right.actual - left.actual || left.activityLabel.localeCompare(right.activityLabel))
+              .slice(0, 3);
+            return {
+              ...section,
+              topActivities,
+              topGapActivities,
+            };
+          })
+          .sort((left, right) => Number(right.sectionSize) - Number(left.sectionSize) || left.label.localeCompare(right.label));
+
+        breakdownMap.set(dataset.id, sections);
+      });
+
+      return breakdownMap;
+    }
+
+    function sectionRecommendation(activityLabel, groupLabel) {
+      const token = String(activityLabel || "").toUpperCase();
+      const group = String(groupLabel || "").toUpperCase();
+      if (token.includes("LOG")) return "Tighten logging sequence and remove waiting between runs.";
+      if (token.includes("WBCO") || token.includes("CIRC")) return "Reduce waiting and optimize circulation / conditioning steps.";
+      if (token.includes("CSG") || token.includes("CEM")) return "Improve casing and cement readiness before execution.";
+      if (token.includes("BOP")) return "Standardize BOP test and handling sequence with pre-job readiness.";
+      if (group.includes("RM") || group.includes("TRIP")) return "Replicate the best tripping sequence and reduce connection / handling delays.";
+      return "Replicate the best observed procedure and remove non-productive waiting in this activity.";
+    }
+
+    function buildAllWellsSectionSummaryRows(datasets, breakdownMap) {
+      return datasets
+        .flatMap((dataset) =>
+          (breakdownMap.get(dataset.id) || []).map((section) => ({
+            rigLabel: dataset.rigLabel || "Rig not mapped",
+            wellLabel: dataset.subjectWell,
+            sectionSize: section.sectionSize,
+            sectionLabel: section.label,
+            actualTotal: section.actualTotal,
+            idealTotal: section.idealTotal,
+            gapTotal: section.gapTotal,
+            topActivities: section.topActivities,
+          }))
+        )
+        .sort((left, right) =>
+          right.gapTotal - left.gapTotal ||
+          right.actualTotal - left.actualTotal ||
+          left.rigLabel.localeCompare(right.rigLabel) ||
+          left.wellLabel.localeCompare(right.wellLabel)
+        );
+    }
+
+    function buildSelectedWellSectionItems(datasets, selectedDataset, breakdownMap) {
+      if (!selectedDataset) return [];
+      const selectedSections = breakdownMap.get(selectedDataset.id) || [];
+      return selectedSections.map((section) => {
+        const peerActuals = datasets
+          .filter((dataset) => dataset.id !== selectedDataset.id)
+          .map((dataset) => (breakdownMap.get(dataset.id) || []).find((item) => item.sectionSize === section.sectionSize))
+          .filter(Boolean)
+          .map((item) => item.actualTotal)
+          .filter((value) => value > 0);
+
+        const offsetAverage = peerActuals.length ? average(peerActuals) : 0;
+        const bestOffset = peerActuals.length ? Math.min(...peerActuals) : 0;
+
+        return {
+          ...section,
+          offsetAverage,
+          bestOffset,
+          gapVsOffsetAverage: offsetAverage > 0 ? section.actualTotal - offsetAverage : 0,
+        };
+      });
+    }
+
+    function buildSectionSavingsSummary(datasets, breakdownMap) {
+      const sectionMap = new Map();
+
+      datasets.forEach((dataset) => {
+        (breakdownMap.get(dataset.id) || []).forEach((section) => {
+          if (!sectionMap.has(section.sectionSize)) {
+            sectionMap.set(section.sectionSize, {
+              sectionSize: section.sectionSize,
+              sectionLabel: section.label,
+              recoverableHours: 0,
+              actualTotal: 0,
+              idealTotal: 0,
+              impactedWells: 0,
+              activityGaps: new Map(),
+              confidenceCounts: { High: 0, Medium: 0, Low: 0 },
+            });
+          }
+
+          const bucket = sectionMap.get(section.sectionSize);
+          bucket.recoverableHours += section.gapTotal;
+          bucket.actualTotal += section.actualTotal;
+          bucket.idealTotal += section.idealTotal;
+          if (section.gapTotal > 0) bucket.impactedWells += 1;
+          section.topGapActivities.forEach((activity) => {
+            bucket.activityGaps.set(
+              activity.activityLabel,
+              (bucket.activityGaps.get(activity.activityLabel) || 0) + activity.gap
+            );
+            bucket.confidenceCounts[activity.confidence] = (bucket.confidenceCounts[activity.confidence] || 0) + 1;
+          });
+        });
+      });
+
+      return Array.from(sectionMap.values())
+        .map((bucket) => {
+          const topActivity = Array.from(bucket.activityGaps.entries())
+            .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))[0];
+          const confidence = bucket.confidenceCounts.High > 0 ? "High" : bucket.confidenceCounts.Medium > 0 ? "Medium" : "Low";
+          return {
+            sectionSize: bucket.sectionSize,
+            sectionLabel: bucket.sectionLabel,
+            recoverableHours: bucket.recoverableHours,
+            recoverableDays: bucket.recoverableHours / 24,
+            actualAverage: datasets.length ? bucket.actualTotal / datasets.length : 0,
+            idealAverage: datasets.length ? bucket.idealTotal / datasets.length : 0,
+            impactedWells: bucket.impactedWells,
+            topActivity: topActivity ? topActivity[0] : "No recurring excess",
+            confidence,
+            recommendation: sectionRecommendation(topActivity ? topActivity[0] : "", ""),
+          };
+        })
+        .sort((left, right) => right.recoverableHours - left.recoverableHours || Number(right.sectionSize) - Number(left.sectionSize));
+    }
+
+    function buildExecutiveNarrativeHtml(selectedDataset, sectionItems, savingsRows, wellRanking) {
+      if (!selectedDataset || !sectionItems.length) {
+        return '<div class="empty">Select a well and load at least one comparable offset to generate the executive narrative.</div>';
+      }
+
+      const worstSection = sectionItems
+        .slice()
+        .sort((left, right) => right.gapTotal - left.gapTotal || right.actualTotal - left.actualTotal)[0];
+      const strongestSavings = savingsRows[0];
+      const rankingRow = wellRanking.find((row) => row.wellLabel === selectedDataset.subjectWell);
+      const topActivities = (worstSection?.topGapActivities || [])
+        .slice(0, 3)
+        .map((item) => item.activityLabel + " (" + formatNumber(item.gap) + " hr)")
+        .join(", ");
+
+      const paragraphs = [
+        '<p><strong>' + escapeHtml(selectedDataset.subjectWell) + '</strong> is currently running with <strong>' + escapeHtml(formatNumber(rankingRow?.excessTotal || 0)) + ' hr</strong> above the recommended flat time benchmark. The section creating the largest burden is <strong>' + escapeHtml(worstSection?.label || "N/A") + '</strong>, where the well is spending <strong>' + escapeHtml(formatNumber(worstSection?.actualTotal || 0)) + ' hr</strong> against an ideal target of <strong>' + escapeHtml(formatNumber(worstSection?.idealTotal || 0)) + ' hr</strong>.</p>',
+        '<p>The system selected this section because it combines the largest recoverable gap with repeatable activities seen across the loaded offsets. In this section, the main drivers are <strong>' + escapeHtml(topActivities || "no recurring drivers identified") + '</strong>. This means the opportunity is not just the single slowest event, but a recurring pattern where the selected well is running slower than the best validated performance.</p>',
+        strongestSavings
+          ? '<p>The most actionable recovery area across the current benchmark set is <strong>' + escapeHtml(strongestSavings.sectionLabel) + '</strong>, with about <strong>' + escapeHtml(formatNumber(strongestSavings.recoverableHours)) + ' hr</strong> (' + escapeHtml(formatNumber(strongestSavings.recoverableDays)) + ' d) available to recover. The recommended action is to attack <strong>' + flatTimeActivityLabelHtml(strongestSavings.topActivity) + '</strong> first because it is the strongest repeated source of excess time and already has a <strong>' + confidenceBadgeHtml(strongestSavings.confidence) + '</strong> benchmark behind it. To recover time, replicate the best observed sequence, remove waiting between dependent steps, and standardize the execution around the loaded offsets that already achieved the lower time.</p>'
+          : '<p>No strong recurring section-level savings case is available yet. Load more offsets to increase benchmark confidence and reveal stable section opportunities.</p>',
+      ];
+
+      return '<div class="drill-list">' + paragraphs.map((paragraph) => '<div class="drill-item">' + paragraph + '</div>').join('') + '</div>';
+    }
+
+    function renderExecutiveSelectedWellSections(target, sectionItems, selectedDataset) {
+      if (!selectedDataset || !sectionItems.length) {
+        target.innerHTML = '<div class="empty">Select a well and load section-sized activities to compare the selected well by section.</div>';
+        return;
+      }
+
+      target.innerHTML = '<div id="flat-time-selected-well-sections-chart"></div><div id="flat-time-selected-well-sections-table" style="margin-top:16px;"></div>';
+      const chartTarget = target.querySelector("#flat-time-selected-well-sections-chart");
+      const tableTarget = target.querySelector("#flat-time-selected-well-sections-table");
+
+      renderMultiSeriesChart(
+        chartTarget,
+        sectionItems.map((item) => ({
+          label: item.label,
+          actual: item.actualTotal,
+          ideal: item.idealTotal,
+          gap: item.gapTotal,
+        })),
+        [
+          { key: "actual", label: selectedDataset.subjectWell + " actual", color: "#1264d6", format: (value) => formatNumber(value) },
+          { key: "ideal", label: "Recommended ideal", color: "#0f766e", format: (value) => formatNumber(value) },
+          { key: "gap", label: "Recoverable gap", color: "#c06a0a", format: (value) => formatNumber(value) },
+        ],
+        { height: 420, minWidth: 760, groupMinWidth: 150 }
+      );
+
+      renderTableHtml(
+        tableTarget,
+        ["Section", "Actual (hr)", "Ideal (hr)", "Gap (hr)", "Top 3 Time Consumers"],
+        sectionItems.map((item) => [
+          escapeHtml(item.label),
+          escapeHtml(formatNumber(item.actualTotal)),
+          escapeHtml(formatNumber(item.idealTotal)),
+          escapeHtml(formatNumber(item.gapTotal)),
+          item.topActivities.map((activity) => flatTimeActivityLabelHtml(activity.activityLabel) + escapeHtml(" (" + formatNumber(activity.actual) + " hr)")).join("<br>"),
+        ])
+      );
+    }
+
+    function renderExecutiveOffsetComparison(target, sectionItems, selectedDataset) {
+      if (!selectedDataset || !sectionItems.length) {
+        target.innerHTML = '<div class="empty">Need one selected well and at least one comparable offset to build the section comparison.</div>';
+        return;
+      }
+
+      target.innerHTML = '<div id="flat-time-offset-comparison-chart"></div><div id="flat-time-offset-comparison-table" style="margin-top:16px;"></div>';
+      const chartTarget = target.querySelector("#flat-time-offset-comparison-chart");
+      const tableTarget = target.querySelector("#flat-time-offset-comparison-table");
+
+      renderMultiSeriesChart(
+        chartTarget,
+        sectionItems.map((item) => ({
+          label: item.label,
+          selected: item.actualTotal,
+          offsetAverage: item.offsetAverage,
+          bestOffset: item.bestOffset,
+          ideal: item.idealTotal,
+        })),
+        [
+          { key: "selected", label: selectedDataset.subjectWell, color: "#1264d6", format: (value) => formatNumber(value) },
+          { key: "offsetAverage", label: "Offset avg", color: "#0f766e", format: (value) => formatNumber(value) },
+          { key: "bestOffset", label: "Best offset", color: "#7c3aed", format: (value) => formatNumber(value) },
+          { key: "ideal", label: "Recommended ideal", color: "#c06a0a", format: (value) => formatNumber(value) },
+        ],
+        { height: 420, minWidth: 820, groupMinWidth: 160 }
+      );
+
+      renderTable(
+        tableTarget,
+        ["Section", selectedDataset.subjectWell + " (hr)", "Offset Avg (hr)", "Best Offset (hr)", "Ideal (hr)", "Gap vs Offset Avg (hr)"],
+        sectionItems.map((item) => [
+          item.label,
+          formatNumber(item.actualTotal),
+          formatNumber(item.offsetAverage),
+          formatNumber(item.bestOffset),
+          formatNumber(item.idealTotal),
+          formatNumber(item.gapVsOffsetAverage),
+        ])
+      );
+    }
+
+    function renderSectionHeatmap(target, datasets, breakdownMap) {
+      if (!datasets.length) {
+        target.innerHTML = '<div class="empty">No section heatmap data available.</div>';
+        return;
+      }
+
+      const sectionSizes = Array.from(
+        new Set(
+          datasets.flatMap((dataset) => (breakdownMap.get(dataset.id) || []).map((item) => item.sectionSize))
+        )
+      ).sort((left, right) => Number(right) - Number(left) || String(left).localeCompare(String(right)));
+
+      if (!sectionSizes.length) {
+        target.innerHTML = '<div class="empty">No section-sized activities available to build the section heatmap.</div>';
+        return;
+      }
+
+      const maxGap = Math.max(
+        ...datasets.flatMap((dataset) =>
+          sectionSizes.map((sectionSize) => {
+            const item = (breakdownMap.get(dataset.id) || []).find((entry) => entry.sectionSize === sectionSize);
+            return Number(item?.gapTotal || 0);
+          })
+        ),
+        0
+      );
+
+      const headerHtml = '<tr><th>Well</th>' + sectionSizes.map((sectionSize) => '<th>' + escapeHtml(formatFlatTimeSectionSize(sectionSize)) + '</th>').join('') + '</tr>';
+      const bodyHtml = datasets.map((dataset) => {
+        const cells = sectionSizes.map((sectionSize) => {
+          const item = (breakdownMap.get(dataset.id) || []).find((entry) => entry.sectionSize === sectionSize);
+          const gap = Number(item?.gapTotal || 0);
+          const opacity = maxGap > 0 ? Math.max(0.12, gap / maxGap) : 0;
+          const bg = gap > 0 ? 'rgba(200, 30, 90, ' + opacity.toFixed(2) + ')' : 'rgba(18, 100, 214, 0.06)';
+          const color = gap > 0.01 ? '#ffffff' : 'var(--ink)';
+          return '<td style="background:' + bg + '; color:' + color + '; font-weight:700; text-align:center;">' + escapeHtml(formatNumber(gap)) + '</td>';
+        }).join('');
+        return '<tr><td><strong>' + escapeHtml(dataset.subjectWell) + '</strong><br><span style="color:var(--muted); font-size:12px;">' + escapeHtml(dataset.rigLabel || "") + '</span></td>' + cells + '</tr>';
+      }).join('');
+
+      target.innerHTML = '<div class="table-wrap"><table><thead>' + headerHtml + '</thead><tbody>' + bodyHtml + '</tbody></table></div>';
+    }
+
     function renderWaterfallChart(target, dataset, opportunities) {
       if (!dataset || !opportunities.length) {
         target.innerHTML = '<div class="empty">Choose a well to draw the waterfall.</div>';
@@ -4489,6 +4868,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         ui.flatTimeSummary.innerHTML = '<div class="empty">Upload flat time CSV files to start the comparison.</div>';
         ui.flatTimeWellRanking.innerHTML = '<div class="empty">Upload flat time CSV files to rank wells by excess time.</div>';
         ui.flatTimeParetoChart.innerHTML = '<div class="empty">Upload flat time CSV files to build a Pareto of recoverable hours.</div>';
+        ui.flatTimeAllWellsSections.innerHTML = '<div class="empty">Upload flat time CSV files to summarize all wells by section.</div>';
+        ui.flatTimeSelectedWellSections.innerHTML = '<div class="empty">Upload flat time CSV files to compare the selected well by section.</div>';
+        ui.flatTimeOffsetComparison.innerHTML = '<div class="empty">Upload flat time CSV files to compare the selected well against loaded offsets.</div>';
+        ui.flatTimeSectionHeatmap.innerHTML = '<div class="empty">Upload flat time CSV files to draw the section heat map.</div>';
+        ui.flatTimeSavingsSummary.innerHTML = '<div class="empty">Upload flat time CSV files to summarize recoverable time by section.</div>';
+        ui.flatTimeNarrative.innerHTML = '<div class="empty">Upload flat time CSV files to generate the executive explanation.</div>';
         ui.flatTimeWaterfallChart.innerHTML = '<div class="empty">Upload flat time CSV files to build the waterfall.</div>';
         ui.flatTimeSectionBenchmarkChart.innerHTML = '<div class="empty">Upload flat time CSV files to compare sections.</div>';
         ui.flatTimeRigSummary.innerHTML = '<div class="empty">Upload flat time CSV files to summarize rigs.</div>';
@@ -4521,6 +4906,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         ui.flatTimeSummary.innerHTML = '<div class="empty">No benchmark activities match the selected section size.</div>';
         ui.flatTimeWellRanking.innerHTML = '<div class="empty">No well ranking available for this section size.</div>';
         ui.flatTimeParetoChart.innerHTML = '<div class="empty">No Pareto data available for this section size.</div>';
+        ui.flatTimeAllWellsSections.innerHTML = '<div class="empty">No well-section summary available for this section size.</div>';
+        ui.flatTimeSelectedWellSections.innerHTML = '<div class="empty">No selected-well section comparison available for this section size.</div>';
+        ui.flatTimeOffsetComparison.innerHTML = '<div class="empty">No offset comparison available for this section size.</div>';
+        ui.flatTimeSectionHeatmap.innerHTML = '<div class="empty">No section heat map available for this section size.</div>';
+        ui.flatTimeSavingsSummary.innerHTML = '<div class="empty">No savings summary available for this section size.</div>';
+        ui.flatTimeNarrative.innerHTML = '<div class="empty">No executive explanation available for this section size.</div>';
         ui.flatTimeWaterfallChart.innerHTML = '<div class="empty">No waterfall available for this section size.</div>';
         ui.flatTimeSectionBenchmarkChart.innerHTML = '<div class="empty">No section benchmark available for this section size.</div>';
         ui.flatTimeRigSummary.innerHTML = '<div class="empty">No rig benchmark summary available for this section size.</div>';
@@ -4585,6 +4976,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const selectedWell = ui.flatTimeWell.value || flatTimeState.focusWell || worstWell;
       const selectedDataset = datasets.find((dataset) => dataset.subjectWell === selectedWell) || datasets[0];
       const selectedActivity = flatTimeState.focusActivity || topActivityFocus;
+      const sectionBreakdownMap = buildSectionBreakdownMap(datasets, allOpportunities, metricKey);
+      const selectedWellSectionItems = buildSelectedWellSectionItems(datasets, selectedDataset, sectionBreakdownMap);
+      const allWellSectionRows = buildAllWellsSectionSummaryRows(datasets, sectionBreakdownMap);
+      const sectionSavingsRows = buildSectionSavingsSummary(datasets, sectionBreakdownMap);
       const sectionBenchmarkItems = buildSectionBenchmarkItems(datasets, metricKey, allOpportunities);
       const rigBenchmarkRows = buildRigBenchmarkSummary(datasets, allOpportunities);
       const opportunityPipeline = buildOpportunityPipeline(allOpportunities).slice(0, Math.max(topN, 8));
@@ -4608,6 +5003,36 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       );
 
       renderParetoChart(ui.flatTimeParetoChart, rankedOpportunities);
+      renderTableHtml(
+        ui.flatTimeAllWellsSections,
+        ["Rig", "Well", "Section", "Actual (hr)", "Ideal (hr)", "Gap (hr)", "Top 3 Time Consumers"],
+        allWellSectionRows.map((row) => [
+          escapeHtml(row.rigLabel),
+          flatTimeActionButtonHtml("well", row.wellLabel, row.wellLabel),
+          escapeHtml(row.sectionLabel),
+          escapeHtml(formatNumber(row.actualTotal)),
+          escapeHtml(formatNumber(row.idealTotal)),
+          escapeHtml(formatNumber(row.gapTotal)),
+          row.topActivities.map((activity) => flatTimeActivityLabelHtml(activity.activityLabel) + escapeHtml(" (" + formatNumber(activity.actual) + " hr)")).join("<br>"),
+        ])
+      );
+      renderExecutiveSelectedWellSections(ui.flatTimeSelectedWellSections, selectedWellSectionItems, selectedDataset);
+      renderExecutiveOffsetComparison(ui.flatTimeOffsetComparison, selectedWellSectionItems, selectedDataset);
+      renderSectionHeatmap(ui.flatTimeSectionHeatmap, datasets, sectionBreakdownMap);
+      renderTableHtml(
+        ui.flatTimeSavingsSummary,
+        ["Section", "Recoverable (hr)", "Recoverable (d)", "Impacted Wells", "Top Activity", "Confidence", "Recommended Action"],
+        sectionSavingsRows.map((row) => [
+          escapeHtml(row.sectionLabel),
+          escapeHtml(formatNumber(row.recoverableHours)),
+          escapeHtml(formatNumber(row.recoverableDays)),
+          escapeHtml(String(row.impactedWells)),
+          flatTimeActivityLabelHtml(row.topActivity),
+          confidenceBadgeHtml(row.confidence),
+          escapeHtml(row.recommendation),
+        ])
+      );
+      ui.flatTimeNarrative.innerHTML = buildExecutiveNarrativeHtml(selectedDataset, selectedWellSectionItems, sectionSavingsRows, wellRanking);
       renderWaterfallChart(ui.flatTimeWaterfallChart, selectedDataset, allOpportunities);
       renderMultiSeriesChart(
         ui.flatTimeSectionBenchmarkChart,
