@@ -3819,32 +3819,43 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     function buildSectionBenchmarkItems(datasets, metricKey, opportunities) {
       const sectionMap = new Map();
+      const opportunityMap = new Map(
+        opportunities.map((opportunity) => [opportunity.activityLabel, opportunity])
+      );
+
       datasets.forEach((dataset) => {
         const totalsBySection = new Map();
         dataset.groups.forEach((group) => {
           group.activities.forEach((activity) => {
             const sectionSize = activity.sectionSize || extractFlatTimeSectionSize(activity.activity);
             if (!sectionSize || sectionSize === "__no_section__") return;
-            if (!sectionMap.has(sectionSize)) sectionMap.set(sectionSize, { values: [], ideal: 0 });
-            totalsBySection.set(sectionSize, (totalsBySection.get(sectionSize) || 0) + Number(activity[metricKey] || 0));
+            const actual = Number(activity[metricKey] || 0);
+            if (actual <= 0) return;
+            const opportunity = opportunityMap.get(activity.activity);
+            const ideal = Number(opportunity?.idealTime || 0);
+            if (!totalsBySection.has(sectionSize)) {
+              totalsBySection.set(sectionSize, { actual: 0, ideal: 0 });
+            }
+            const bucket = totalsBySection.get(sectionSize);
+            bucket.actual += actual;
+            bucket.ideal += ideal;
           });
         });
-        totalsBySection.forEach((value, sectionSize) => {
-          sectionMap.get(sectionSize).values.push(value);
-        });
-      });
 
-      opportunities.forEach((opportunity) => {
-        const sectionSize = opportunity.sectionSize;
-        if (!sectionSize || sectionSize === "__no_section__") return;
-        if (!sectionMap.has(sectionSize)) sectionMap.set(sectionSize, { values: [], ideal: 0 });
-        sectionMap.get(sectionSize).ideal += Number(opportunity.idealTime || 0);
+        totalsBySection.forEach((totals, sectionSize) => {
+          if (!sectionMap.has(sectionSize)) {
+            sectionMap.set(sectionSize, { actualValues: [], idealValues: [] });
+          }
+          const bucket = sectionMap.get(sectionSize);
+          bucket.actualValues.push(totals.actual);
+          bucket.idealValues.push(totals.ideal);
+        });
       });
 
       return Array.from(sectionMap.entries())
         .map(([sectionSize, bucket]) => {
-          const actualAverage = average(bucket.values);
-          const idealTime = Number(bucket.ideal || 0);
+          const actualAverage = average(bucket.actualValues || []);
+          const idealTime = average(bucket.idealValues || []);
           return {
             label: formatFlatTimeSectionSize(sectionSize),
             sectionSize,
@@ -4102,7 +4113,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       });
     }
 
-    function renderFlatTimeDrilldown(datasets, opportunities, selectedWell, selectedActivity) {
+    function renderFlatTimeDrilldown(datasets, opportunities, selectedWell, selectedActivity, sectionOptionDatasets) {
       const selectedDataset = datasets.find((dataset) => dataset.subjectWell === selectedWell) || datasets[0];
       const selectedOpportunity = opportunities.find((opportunity) => opportunity.activityLabel === selectedActivity) || opportunities[0];
 
@@ -4129,12 +4140,40 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .sort((left, right) => right.gap - left.gap || right.actual - left.actual || left.activityLabel.localeCompare(right.activityLabel));
 
       const wellDrivers = allWellDrivers.slice(0, 6);
+      const wellOptions = datasets
+        .slice()
+        .sort((left, right) => left.subjectWell.localeCompare(right.subjectWell))
+        .map((dataset) => (
+          '<option value="' + escapeHtml(dataset.subjectWell) + '"' +
+          (dataset.subjectWell === selectedDataset.subjectWell ? " selected" : "") +
+          '>' + escapeHtml(dataset.subjectWell + (dataset.rigLabel ? " • " + dataset.rigLabel : "")) + "</option>"
+        ))
+        .join("");
+      const sectionOptions = ['<option value="">All section sizes</option>']
+        .concat(
+          getAvailableFlatTimeSectionSizes(sectionOptionDatasets || datasets).map((sectionSize) => (
+            '<option value="' + escapeHtml(sectionSize) + '"' +
+            (sectionSize === (ui.flatTimeSection.value || "") ? " selected" : "") +
+            '>' + escapeHtml(formatFlatTimeSectionSize(sectionSize)) + "</option>"
+          ))
+        )
+        .join("");
 
       const wellActualTotal = allWellDrivers.reduce((sum, item) => sum + item.actual, 0);
       const wellIdealTotal = allWellDrivers.reduce((sum, item) => sum + item.idealTime, 0);
       const wellExcess = allWellDrivers.reduce((sum, item) => sum + item.gap, 0);
 
       ui.flatTimeWellDrilldown.innerHTML =
+        '<div class="drill-grid" style="margin-bottom:14px;">' +
+        '<div class="field">' +
+        '<label for="flat-time-drilldown-well-select">Selected Well</label>' +
+        '<select id="flat-time-drilldown-well-select">' + wellOptions + '</select>' +
+        '</div>' +
+        '<div class="field">' +
+        '<label for="flat-time-drilldown-section-select">Selected Section</label>' +
+        '<select id="flat-time-drilldown-section-select">' + sectionOptions + '</select>' +
+        '</div>' +
+        '</div>' +
         '<div class="metric-strip" style="margin-bottom:14px;">' +
         '<div class="metric-pill"><div class="label">Selected Well</div><div class="value"><span class="value-main">' + escapeHtml(selectedDataset.subjectWell) + '</span></div><div class="meta">' + escapeHtml(selectedDataset.rigLabel || "Rig not mapped") + '</div></div>' +
         '<div class="metric-pill"><div class="label">Actual Flat Time</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(wellActualTotal)) + '</span><span class="value-suffix">' + escapeHtml("hr / " + formatNumber(wellActualTotal / 24) + " d") + '</span></div><div class="meta">All activities in the selected filter context</div></div>' +
@@ -4149,6 +4188,23 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           '</div>'
         ).join('') +
         '</div>';
+
+      const drilldownWellSelect = document.getElementById("flat-time-drilldown-well-select");
+      if (drilldownWellSelect) {
+        drilldownWellSelect.addEventListener("change", () => {
+          flatTimeState.focusWell = drilldownWellSelect.value || "";
+          ui.flatTimeWell.value = flatTimeState.focusWell;
+          renderFlatTime();
+        });
+      }
+
+      const drilldownSectionSelect = document.getElementById("flat-time-drilldown-section-select");
+      if (drilldownSectionSelect) {
+        drilldownSectionSelect.addEventListener("change", () => {
+          ui.flatTimeSection.value = drilldownSectionSelect.value || "";
+          renderFlatTime();
+        });
+      }
 
       const peerRows = selectedOpportunity.ranked
         .slice()
@@ -4673,7 +4729,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       renderVariabilityChart(ui.flatTimeVariabilityChart, allOpportunities, topN);
       renderHeatmap(ui.flatTimeHeatmap, datasets, allOpportunities, topN);
       renderPerfectFlatTimeChart(ui.flatTimePerfectChart, datasets, metricKey);
-      renderFlatTimeDrilldown(datasets, allOpportunities, selectedWell, selectedActivity);
+      renderFlatTimeDrilldown(datasets, allOpportunities, selectedWell, selectedActivity, rigDatasets);
       wireFlatTimeFocusActions();
     }
 
