@@ -297,6 +297,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       border-color: rgba(18, 100, 214, 0.44);
     }
 
+    .table-inline-input {
+      width: 100%;
+      min-width: 110px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font: inherit;
+      color: var(--ink);
+      background: rgba(255, 255, 255, 0.92);
+    }
+
+    .table-inline-input:focus {
+      outline: 2px solid rgba(18, 100, 214, 0.18);
+      border-color: rgba(18, 100, 214, 0.44);
+    }
+
     .toggle-grid {
       grid-template-columns: 1fr 1fr;
     }
@@ -1086,6 +1102,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     body.theme-corona .field input,
     body.theme-corona .field select,
+    body.theme-corona .table-inline-input,
     body.theme-corona .toggle,
     body.theme-corona .theme-toggle,
     body.theme-corona .file-input {
@@ -1094,12 +1111,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       border-color: #2c2e33;
     }
 
-    body.theme-corona .field input::placeholder {
+    body.theme-corona .field input::placeholder,
+    body.theme-corona .table-inline-input::placeholder {
       color: #7f8896;
     }
 
     body.theme-corona .field input:focus,
-    body.theme-corona .field select:focus {
+    body.theme-corona .field select:focus,
+    body.theme-corona .table-inline-input:focus {
       outline-color: rgba(0, 144, 231, 0.22);
       border-color: rgba(0, 144, 231, 0.56);
     }
@@ -1630,6 +1649,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
               <div class="legend">
                 <span class="legend-item"><span class="legend-dot" style="background:#1264d6;"></span>Interventions</span>
                 <span class="legend-item"><span class="legend-dot" style="background:#0f766e;"></span>Rig Action</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#be123c;"></span>Validated</span>
                 <span class="legend-item"><span class="legend-dot" style="background:#c06a0a;"></span>Validation %</span>
               </div>
               <div id="weekly-category-chart"></div>
@@ -2113,6 +2133,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     const CATEGORY_ORDER = ["Stuck pipe", "Optimization", "Operational Compliance", "Well Control", "Reporting"];
     const THEME_STORAGE_KEY = "weekly-report-theme";
+    const WEEKLY_MONITORED_OVERRIDES_KEY = "weekly-monitored-wells-overrides";
     const FLAT_TIME_SERIES_COLORS = ["#1264d6", "#0f766e", "#c06a0a", "#be123c", "#7c3aed", "#0891b2", "#16a34a", "#dc2626"];
     const FLAT_TIME_ACTIVITY_TRANSLATIONS = dashboardData.activityCodeTranslations || {
       loaded: false,
@@ -2185,6 +2206,29 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     function formatNumber(value) {
       return numberFormatter.format(Number(value || 0));
+    }
+
+    function getWeeklyMonitoredOverrides() {
+      try {
+        const raw = localStorage.getItem(WEEKLY_MONITORED_OVERRIDES_KEY);
+        const parsed = raw ? JSON.parse(raw) : {};
+        return parsed && typeof parsed === "object" ? parsed : {};
+      } catch (error) {
+        return {};
+      }
+    }
+
+    function setWeeklyMonitoredOverride(rowKey, fieldName, value) {
+      const overrides = getWeeklyMonitoredOverrides();
+      if (!overrides[rowKey] || typeof overrides[rowKey] !== "object") {
+        overrides[rowKey] = {};
+      }
+      overrides[rowKey][fieldName] = String(value || "").trim();
+      localStorage.setItem(WEEKLY_MONITORED_OVERRIDES_KEY, JSON.stringify(overrides));
+    }
+
+    function weeklyMonitoredRowKey(row) {
+      return String(row.rig || "") + "||" + String(row.well || "");
     }
 
     function slugify(value) {
@@ -3406,6 +3450,21 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       return top ? top[0] : fallback;
     }
 
+    function resolveWeeklyMonitoredType(rows, wellName, fieldName) {
+      const dominantType = dominantGroupValue(rows, "type", "");
+      if (dominantType && dominantType.toLowerCase() !== "n/a") {
+        return dominantType;
+      }
+
+      const wellText = String(wellName || "").toUpperCase();
+      const fieldText = String(fieldName || "").toUpperCase();
+      if (wellText.includes("HRDH") || fieldText.includes("HRDH")) {
+        return "Gas";
+      }
+
+      return "N/A";
+    }
+
     function countAndValidityCell(bucket) {
       return String(bucket.count) + " / " + bucket.validity;
     }
@@ -3540,7 +3599,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             well: group.well,
             section: dominantGroupValue(group.rows, "holeSize"),
             field: dominantGroupValue(group.rows, "field"),
-            type: dominantGroupValue(group.rows, "type"),
+            type: resolveWeeklyMonitoredType(group.rows, group.well, dominantGroupValue(group.rows, "field")),
             optimization: byCategory("Optimization"),
             stuckPipe: byCategory("Stuck pipe"),
             wellControl: byCategory("Well Control"),
@@ -3669,20 +3728,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             totalRow.wellControl.count +
             totalRow.operationalCompliance.count +
             totalRow.reporting.count
-          ) + " / " + formatPercent((
-            totalRow.optimization.validityCount +
-            totalRow.stuckPipe.validityCount +
-            totalRow.wellControl.validityCount +
-            totalRow.operationalCompliance.validityCount +
-            totalRow.reporting.validityCount
-          ) / Math.max(
-            totalRow.optimization.den +
-            totalRow.stuckPipe.den +
-            totalRow.wellControl.den +
-            totalRow.operationalCompliance.den +
-            totalRow.reporting.den,
-            1
-          ))) + "</strong></td>" +
+          )) + "</strong></td>" +
           "</tr>"
         );
 
@@ -3694,6 +3740,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         target.innerHTML = '<div class="empty">No monitored wells available for the selected period.</div>';
         return;
       }
+      const overrides = getWeeklyMonitoredOverrides();
 
       const totalRow = rows.reduce(
         (acc, row) => {
@@ -3709,13 +3756,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       const bodyHtml = rows
         .map((row) => {
+          const rowKey = weeklyMonitoredRowKey(row);
+          const rowOverrides = overrides[rowKey] || {};
+          const sectionValue = rowOverrides.section || row.section || "";
+          const fieldValue = rowOverrides.field || row.field || "";
+          const typeValue = rowOverrides.type || row.type || "";
           return (
             "<tr>" +
             "<td>" + escapeHtml(row.rig) + "</td>" +
             "<td>" + escapeHtml(row.well) + "</td>" +
-            "<td>" + escapeHtml(row.section) + "</td>" +
-            "<td>" + escapeHtml(row.field) + "</td>" +
-            "<td>" + escapeHtml(row.type) + "</td>" +
+            '<td><input type="text" class="table-inline-input" data-weekly-monitored-key="' + escapeHtml(rowKey) + '" data-weekly-monitored-field="section" value="' + escapeHtml(sectionValue) + '" placeholder="Section"></td>' +
+            '<td><input type="text" class="table-inline-input" data-weekly-monitored-key="' + escapeHtml(rowKey) + '" data-weekly-monitored-field="field" value="' + escapeHtml(fieldValue) + '" placeholder="Field"></td>' +
+            '<td><input type="text" class="table-inline-input" data-weekly-monitored-key="' + escapeHtml(rowKey) + '" data-weekly-monitored-field="type" value="' + escapeHtml(typeValue) + '" placeholder="Type"></td>' +
             "<td>" + escapeHtml(String(row.monitoredThisWeek)) + "</td>" +
             "<td>" + escapeHtml(String(row.monitoredSinceStart)) + "</td>" +
             "<td>" + escapeHtml(String(row.total.count)) + "</td>" +
@@ -3741,6 +3793,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         "</tr></thead><tbody>" +
         bodyHtml +
         "</tbody></table></div>";
+
+      Array.from(target.querySelectorAll("[data-weekly-monitored-key]")).forEach((input) => {
+        input.addEventListener("change", () => {
+          setWeeklyMonitoredOverride(
+            input.dataset.weeklyMonitoredKey || "",
+            input.dataset.weeklyMonitoredField || "",
+            input.value || ""
+          );
+        });
+      });
     }
 
     function buildFlatTimeGroupItems(datasets, totalKey) {
@@ -5271,11 +5333,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       renderTable(
         ui.weeklyCategoryTable,
-        ["Category", "Number of Interventions", "Rig Action Taken", "Validation %"],
+        ["Category", "Number of Interventions", "Rig Action Taken", "Validated", "Validation %"],
         weeklyCategories.map((item) => [
           item.label,
           String(item.interventions),
           String(item.rigAction),
+          String(item.validated),
           formatPercent(item.validationRate),
         ])
       );
@@ -5283,6 +5346,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       renderMultiSeriesChart(ui.weeklyCategoryChart, weeklyCategories, [
         { key: "interventions", label: "Interventions", color: "#1264d6" },
         { key: "rigAction", label: "Rig Action", color: "#0f766e" },
+        { key: "validated", label: "Validated", color: "#be123c" },
         { key: "validationRate", label: "Validation %", color: "#c06a0a", format: (value) => formatPercent(value), scale: (value, context) => value * context.primaryMax, isSecondary: true },
       ]);
 
