@@ -2149,6 +2149,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       uploadedDatasets: [],
       focusWell: "",
       focusActivity: "",
+      focusActivities: [],
     };
 
     function getChartTheme() {
@@ -3910,6 +3911,108 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       return "High";
     }
 
+    function normalizeFlatTimeFocusActivities(opportunities, fallbackActivity) {
+      const validActivities = new Set(opportunities.map((opportunity) => opportunity.activityLabel));
+      const currentValues = Array.isArray(flatTimeState.focusActivities) && flatTimeState.focusActivities.length
+        ? flatTimeState.focusActivities
+        : flatTimeState.focusActivity
+          ? [flatTimeState.focusActivity]
+          : [];
+      const sanitized = Array.from(
+        new Set(
+          currentValues
+            .filter((value) => typeof value === "string" && value.trim())
+            .map((value) => value.trim())
+            .filter((value) => validActivities.has(value))
+        )
+      );
+      if (!sanitized.length && fallbackActivity && validActivities.has(fallbackActivity)) {
+        sanitized.push(fallbackActivity);
+      }
+      flatTimeState.focusActivities = sanitized;
+      flatTimeState.focusActivity = sanitized[0] || "";
+      return sanitized;
+    }
+
+    function buildSelectedActivityAggregate(opportunities, selectedActivityLabels) {
+      const selectedLabels = Array.from(
+        new Set((selectedActivityLabels || []).filter((value) => typeof value === "string" && value.trim()))
+      );
+      const selectedItems = opportunities.filter((opportunity) => selectedLabels.includes(opportunity.activityLabel));
+      if (!selectedItems.length) return null;
+
+      const peerMap = new Map();
+      selectedItems.forEach((opportunity) => {
+        opportunity.ranked.forEach((entry) => {
+          if (!peerMap.has(entry.datasetId)) {
+            peerMap.set(entry.datasetId, {
+              datasetId: entry.datasetId,
+              label: entry.label,
+              rigLabel: entry.rigLabel || "Rig not mapped",
+              value: 0,
+            });
+          }
+          peerMap.get(entry.datasetId).value += Number(entry.value || 0);
+        });
+      });
+
+      const ranked = Array.from(peerMap.values())
+        .filter((entry) => entry.value > 0)
+        .sort((left, right) => right.value - left.value || left.label.localeCompare(right.label));
+      const values = ranked.map((entry) => entry.value);
+      const occurrenceCount = values.length;
+      const topEntry = ranked[0] || { label: "N/A", rigLabel: "Rig not mapped", value: 0 };
+      const meanValue = occurrenceCount ? values.reduce((sum, value) => sum + value, 0) / occurrenceCount : 0;
+      const peerValues = ranked.slice(1).map((entry) => entry.value).filter((value) => value > 0);
+      const peerAverage = peerValues.length ? average(peerValues) : 0;
+      const fastestTime = occurrenceCount ? Math.min(...values) : 0;
+      const p25Value = percentile(values, 0.25);
+      const sortedValues = values.slice().sort((left, right) => left - right);
+      const medianValue = occurrenceCount
+        ? (occurrenceCount % 2
+            ? sortedValues[(occurrenceCount - 1) / 2]
+            : (sortedValues[occurrenceCount / 2 - 1] + sortedValues[occurrenceCount / 2]) / 2)
+        : 0;
+      const stdDev = standardDeviation(values);
+      const cv = meanValue > 0 ? stdDev / meanValue : 0;
+      const idealTime = selectedItems.reduce((sum, item) => sum + Number(item.idealTime || 0), 0);
+      const gapToIdeal = Math.max(topEntry.value - idealTime, 0);
+      const totalRecoverableHours = ranked.reduce((sum, entry) => sum + Math.max(entry.value - idealTime, 0), 0);
+      const confidence = flatTimeConfidence(occurrenceCount, cv);
+      const variability = flatTimeVariabilityLabel(cv);
+      const sectionLabels = Array.from(new Set(selectedItems.map((item) => formatFlatTimeSectionSize(item.sectionSize))));
+      const groupLabels = Array.from(new Set(selectedItems.map((item) => item.groupLabel || "Unknown")));
+
+      return {
+        activityLabels: selectedLabels,
+        activityLabel: selectedLabels.join(" + "),
+        labelCount: selectedLabels.length,
+        groupLabel: groupLabels.join(" • "),
+        sectionLabel: sectionLabels.join(" • "),
+        idealTime,
+        idealRule: selectedItems.length === 1 ? selectedItems[0].idealRule : (selectedItems.length + " activity ideals summed"),
+        confidence,
+        variability,
+        occurrenceCount,
+        fastestTime,
+        meanValue,
+        medianValue,
+        p25Value,
+        stdDev,
+        cv,
+        topEntry,
+        peerAverage,
+        gapToIdeal,
+        totalRecoverableHours,
+        values,
+        ranked,
+        summaryText:
+          occurrenceCount >= 2
+            ? selectedItems.length + " activities across " + occurrenceCount + " wells; peers avg " + formatNumber(peerAverage || meanValue || 0) + " hr, top well " + topEntry.label + " ran " + formatNumber(topEntry.value) + " hr"
+            : "Only one well observed for the selected activity set",
+      };
+    }
+
     function computeFlatTimeOpportunity(item, datasets) {
       const ranked = datasets
         .map((dataset) => ({
@@ -4265,12 +4368,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       if (!selectedDataset) return [];
       const selectedSections = breakdownMap.get(selectedDataset.id) || [];
       return selectedSections.map((section) => {
-        const peerActuals = datasets
+        const peerSections = datasets
           .filter((dataset) => dataset.id !== selectedDataset.id)
-          .map((dataset) => (breakdownMap.get(dataset.id) || []).find((item) => item.sectionSize === section.sectionSize))
-          .filter(Boolean)
-          .map((item) => item.actualTotal)
-          .filter((value) => value > 0);
+          .map((dataset) => {
+            const peerSection = (breakdownMap.get(dataset.id) || []).find((item) => item.sectionSize === section.sectionSize);
+            if (!peerSection || peerSection.actualTotal <= 0) return null;
+            return {
+              dataset,
+              actualTotal: peerSection.actualTotal,
+            };
+          })
+          .filter(Boolean);
+
+        const peerActuals = peerSections.map((item) => item.actualTotal).filter((value) => value > 0);
+        const bestPeer = peerSections
+          .slice()
+          .sort((left, right) => left.actualTotal - right.actualTotal || left.dataset.subjectWell.localeCompare(right.dataset.subjectWell))[0] || null;
 
         const offsetAverage = peerActuals.length ? average(peerActuals) : 0;
         const bestOffset = peerActuals.length ? Math.min(...peerActuals) : 0;
@@ -4279,6 +4392,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           ...section,
           offsetAverage,
           bestOffset,
+          bestOffsetWell: bestPeer ? bestPeer.dataset.subjectWell : "No peer",
+          bestOffsetRig: bestPeer ? (bestPeer.dataset.rigLabel || "Rig not mapped") : "No peer",
+          peerCount: peerActuals.length,
           gapVsOffsetAverage: offsetAverage > 0 ? section.actualTotal - offsetAverage : 0,
         };
       });
@@ -4370,7 +4486,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         return;
       }
 
-      target.innerHTML = '<div id="flat-time-selected-well-sections-chart"></div><div id="flat-time-selected-well-sections-table" style="margin-top:16px;"></div>';
+      target.innerHTML =
+        '<div class="legend" style="margin-bottom:10px;">' +
+        '<span class="legend-item"><span class="legend-dot" style="background:#1264d6;"></span>' + escapeHtml(selectedDataset.subjectWell + " actual") + '</span>' +
+        '<span class="legend-item"><span class="legend-dot" style="background:#0f766e;"></span>Synthetic ideal</span>' +
+        '<span class="legend-item"><span class="legend-dot" style="background:#c06a0a;"></span>Recoverable gap</span>' +
+        '</div>' +
+        '<p class="report-note" style="margin-bottom:14px;">Synthetic ideal is an activity-by-activity benchmark assembled from the loaded offsets. It is not a single real offset well, so it can be lower than the best real well in a section.</p>' +
+        '<div id="flat-time-selected-well-sections-chart"></div><div id="flat-time-selected-well-sections-table" style="margin-top:16px;"></div>';
       const chartTarget = target.querySelector("#flat-time-selected-well-sections-chart");
       const tableTarget = target.querySelector("#flat-time-selected-well-sections-table");
 
@@ -4392,7 +4515,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       renderTableHtml(
         tableTarget,
-        ["Section", "Actual (hr)", "Ideal (hr)", "Gap (hr)", "Top 3 Time Consumers"],
+        ["Section", "Actual (hr)", "Synthetic Ideal (hr)", "Gap (hr)", "Top 3 Time Consumers"],
         sectionItems.map((item) => [
           escapeHtml(item.label),
           escapeHtml(formatNumber(item.actualTotal)),
@@ -4409,7 +4532,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         return;
       }
 
-      target.innerHTML = '<div id="flat-time-offset-comparison-chart"></div><div id="flat-time-offset-comparison-table" style="margin-top:16px;"></div>';
+      target.innerHTML =
+        '<div class="legend" style="margin-bottom:10px;">' +
+        '<span class="legend-item"><span class="legend-dot" style="background:#1264d6;"></span>' + escapeHtml(selectedDataset.subjectWell + " selected") + '</span>' +
+        '<span class="legend-item"><span class="legend-dot" style="background:#0f766e;"></span>Offset average</span>' +
+        '<span class="legend-item"><span class="legend-dot" style="background:#7c3aed;"></span>Best real offset</span>' +
+        '<span class="legend-item"><span class="legend-dot" style="background:#c06a0a;"></span>Synthetic ideal</span>' +
+        '</div>' +
+        '<p class="report-note" style="margin-bottom:14px;">Best real offset is the lowest real well total observed in that section. Synthetic ideal is built from activity-level validated targets and can be lower than the best real offset.</p>' +
+        '<div id="flat-time-offset-comparison-chart"></div><div id="flat-time-offset-comparison-table" style="margin-top:16px;"></div>';
       const chartTarget = target.querySelector("#flat-time-offset-comparison-chart");
       const tableTarget = target.querySelector("#flat-time-offset-comparison-table");
 
@@ -4433,12 +4564,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       renderTable(
         tableTarget,
-        ["Section", selectedDataset.subjectWell + " (hr)", "Offset Avg (hr)", "Best Offset (hr)", "Ideal (hr)", "Gap vs Offset Avg (hr)"],
+        ["Section", selectedDataset.subjectWell + " (hr)", "Offset Avg (hr)", "Best Offset (hr)", "Best Offset Well", "Synthetic Ideal (hr)", "Gap vs Offset Avg (hr)"],
         sectionItems.map((item) => [
           item.label,
           formatNumber(item.actualTotal),
           formatNumber(item.offsetAverage),
           formatNumber(item.bestOffset),
+          item.bestOffsetWell === "No peer" ? item.bestOffsetWell : item.bestOffsetWell + " (" + item.bestOffsetRig + ")",
           formatNumber(item.idealTotal),
           formatNumber(item.gapVsOffsetAverage),
         ])
@@ -4655,15 +4787,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       Array.from(document.querySelectorAll("[data-flat-focus-activity]")).forEach((button) => {
         button.addEventListener("click", () => {
-          flatTimeState.focusActivity = button.dataset.flatFocusActivity || "";
+          flatTimeState.focusActivities = button.dataset.flatFocusActivity ? [button.dataset.flatFocusActivity] : [];
+          flatTimeState.focusActivity = flatTimeState.focusActivities[0] || "";
           renderFlatTime();
         });
       });
     }
 
-    function renderFlatTimeDrilldown(datasets, opportunities, selectedWell, selectedActivity, sectionOptionDatasets) {
+    function renderFlatTimeDrilldown(datasets, opportunities, selectedWell, selectedActivities, sectionOptionDatasets) {
       const selectedDataset = datasets.find((dataset) => dataset.subjectWell === selectedWell) || datasets[0];
-      const selectedOpportunity = opportunities.find((opportunity) => opportunity.activityLabel === selectedActivity) || opportunities[0];
+      const selectedOpportunity = buildSelectedActivityAggregate(opportunities, selectedActivities);
 
       if (!selectedDataset || !selectedOpportunity) {
         ui.flatTimeWellDrilldown.innerHTML = '<div class="empty">Select more CSVs to unlock the drill-down.</div>';
@@ -4769,18 +4902,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .sort((left, right) => left.activityLabel.localeCompare(right.activityLabel))
         .map((opportunity) => (
           '<option value="' + escapeHtml(opportunity.activityLabel) + '"' +
-          (opportunity.activityLabel === selectedOpportunity.activityLabel ? " selected" : "") +
+          (selectedOpportunity.activityLabels.includes(opportunity.activityLabel) ? " selected" : "") +
           '>' + escapeHtml(opportunity.activityLabel) + "</option>"
         ))
         .join("");
 
       ui.flatTimeActivityDrilldown.innerHTML =
-        '<div class="field" style="margin-bottom:14px; max-width:340px;">' +
-        '<label for="flat-time-drilldown-activity-select">Selected Activity</label>' +
-        '<select id="flat-time-drilldown-activity-select">' + activityOptions + '</select>' +
+        '<div class="field" style="margin-bottom:14px; max-width:420px;">' +
+        '<label for="flat-time-drilldown-activity-select">Selected Activities</label>' +
+        '<select id="flat-time-drilldown-activity-select" multiple size="' + escapeHtml(String(Math.min(Math.max(opportunities.length, 6), 12))) + '">' + activityOptions + '</select>' +
+        '<div class="field-help">Use Cmd/Ctrl-click to select multiple activities. The benchmark below sums the selected activities.</div>' +
         '</div>' +
         '<div class="metric-strip" style="margin-bottom:14px;">' +
-        '<div class="metric-pill"><div class="label">Selected Activity</div><div class="value"><span class="value-main">' + flatTimeActivityLabelHtml(selectedOpportunity.activityLabel) + '</span></div><div class="meta">' + escapeHtml(selectedOpportunity.groupLabel + " • " + formatFlatTimeSectionSize(selectedOpportunity.sectionSize)) + '</div></div>' +
+        '<div class="metric-pill"><div class="label">Selected Activities</div><div class="value"><span class="value-main">' + escapeHtml(String(selectedOpportunity.labelCount)) + '</span><span class="value-suffix">' + escapeHtml(selectedOpportunity.labelCount === 1 ? "activity" : "activities") + '</span></div><div class="meta">' + selectedOpportunity.activityLabels.map((label) => flatTimeActivityLabelHtml(label)).join("<br>") + '</div></div>' +
         '<div class="metric-pill"><div class="label">Recommended Ideal</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(selectedOpportunity.idealTime)) + '</span><span class="value-suffix">' + escapeHtml("hr / " + formatNumber(selectedOpportunity.idealTime / 24) + " d") + '</span></div><div class="meta">' + escapeHtml(selectedOpportunity.idealRule) + '</div></div>' +
         '<div class="metric-pill"><div class="label">Confidence</div><div class="value">' + confidenceBadgeHtml(selectedOpportunity.confidence) + '</div><div class="meta">' + escapeHtml(selectedOpportunity.variability + " variability • sample " + selectedOpportunity.occurrenceCount) + '</div></div>' +
         '<div class="metric-pill"><div class="label">Observed Range</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(selectedOpportunity.fastestTime)) + " - " + escapeHtml(formatNumber(Math.max(...selectedOpportunity.values, 0))) + '</span><span class="value-suffix">' + escapeHtml("hr / " + formatNumber(selectedOpportunity.fastestTime / 24) + " - " + formatNumber(Math.max(...selectedOpportunity.values, 0) / 24) + " d") + '</span></div><div class="meta">Fastest to slowest observed execution</div></div>' +
@@ -4799,13 +4933,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const drilldownSelect = document.getElementById("flat-time-drilldown-activity-select");
       if (drilldownSelect) {
         drilldownSelect.addEventListener("change", () => {
-          flatTimeState.focusActivity = drilldownSelect.value || "";
+          flatTimeState.focusActivities = Array.from(drilldownSelect.selectedOptions || []).map((option) => option.value).filter(Boolean);
+          flatTimeState.focusActivity = flatTimeState.focusActivities[0] || "";
           renderFlatTime();
         });
       }
 
       ui.flatTimeDrilldownNote.textContent =
-        'Selected well: ' + selectedDataset.subjectWell + ' • selected activity: ' + selectedOpportunity.activityLabel + '. ' +
+        'Selected well: ' + selectedDataset.subjectWell + ' • selected activities: ' + selectedOpportunity.activityLabels.join(", ") + '. ' +
         'Headline well totals are now calculated from all activities in the selected filter context, while the list below keeps only the top loss drivers. ' +
         'Depth-based drill-down is still limited because the uploaded CSVs do not contain true depth fields such as section top/bottom, measured depth or TD.';
     }
@@ -5138,13 +5273,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       if (!flatTimeState.focusWell || !datasets.some((dataset) => dataset.subjectWell === flatTimeState.focusWell)) {
         flatTimeState.focusWell = worstWell;
       }
-      if (!flatTimeState.focusActivity || !allOpportunities.some((item) => item.activityLabel === flatTimeState.focusActivity)) {
-        flatTimeState.focusActivity = topActivityFocus;
-      }
+      const selectedActivities = normalizeFlatTimeFocusActivities(allOpportunities, topActivityFocus);
       populateFlatTimeWellOptions(datasets, flatTimeState.focusWell || worstWell);
       const selectedWell = ui.flatTimeWell.value || flatTimeState.focusWell || worstWell;
       const selectedDataset = datasets.find((dataset) => dataset.subjectWell === selectedWell) || datasets[0];
-      const selectedActivity = flatTimeState.focusActivity || topActivityFocus;
       const sectionBreakdownMap = buildSectionBreakdownMap(datasets, allOpportunities, metricKey);
       const selectedWellSectionItems = buildSelectedWellSectionItems(datasets, selectedDataset, sectionBreakdownMap);
       const allWellSectionRows = buildAllWellsSectionSummaryRows(datasets, sectionBreakdownMap);
@@ -5323,7 +5455,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       renderVariabilityChart(ui.flatTimeVariabilityChart, allOpportunities, topN);
       renderHeatmap(ui.flatTimeHeatmap, datasets, allOpportunities, topN);
       renderPerfectFlatTimeChart(ui.flatTimePerfectChart, datasets, metricKey);
-      renderFlatTimeDrilldown(datasets, allOpportunities, selectedWell, selectedActivity, rigDatasets);
+      renderFlatTimeDrilldown(datasets, allOpportunities, selectedWell, selectedActivities, rigDatasets);
       wireFlatTimeFocusActions();
     }
 
@@ -5784,6 +5916,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         ui.flatTimeWell.value = "";
         flatTimeState.focusWell = "";
         flatTimeState.focusActivity = "";
+        flatTimeState.focusActivities = [];
         renderFlatTime();
       });
       ui.flatTimeUpload.addEventListener("change", async () => {
