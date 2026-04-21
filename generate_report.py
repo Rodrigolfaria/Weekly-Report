@@ -1712,11 +1712,21 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <div class="section-header">
             <div>
               <h2 class="section-title">Weekly Intervention Statistics and Analysis</h2>
-              <p class="section-subtitle">Rig and well level intervention counts and validation rates by category for the selected weekly period.</p>
+              <p class="section-subtitle">Rig and well level intervention counts with validity grouped by category for the selected weekly period.</p>
             </div>
           </div>
           <div id="weekly-stats-metrics" class="metric-strip" style="margin-bottom: 18px;"></div>
           <div id="weekly-stats-table"></div>
+        </section>
+
+        <section class="panel section">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">Weekly Monitored Wells Summary</h2>
+              <p class="section-subtitle">Monitored wells, dominant section and well metadata, monitored days, total interventions, and RDH validation rate for the selected week and cumulative scope.</p>
+            </div>
+          </div>
+          <div id="weekly-monitored-wells-table"></div>
         </section>
 
       </div>
@@ -2049,6 +2059,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       potentialHighlightsTable: document.getElementById("potential-highlights-table"),
       weeklyStatsMetrics: document.getElementById("weekly-stats-metrics"),
       weeklyStatsTable: document.getElementById("weekly-stats-table"),
+      weeklyMonitoredWellsTable: document.getElementById("weekly-monitored-wells-table"),
       flatTimeTitle: document.getElementById("flat-time-title"),
       flatTimeSubtitle: document.getElementById("flat-time-subtitle"),
       flatTimeRig: document.getElementById("flat-time-rig"),
@@ -3383,6 +3394,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .join("");
     }
 
+    function dominantGroupValue(rows, key, fallback = "N/A") {
+      const counts = new Map();
+      rows.forEach((row) => {
+        const value = String(row?.[key] || "").trim();
+        if (!value) return;
+        counts.set(value, (counts.get(value) || 0) + 1);
+      });
+      const top = Array.from(counts.entries())
+        .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))[0];
+      return top ? top[0] : fallback;
+    }
+
+    function countAndValidityCell(bucket) {
+      return String(bucket.count) + " / " + bucket.validity;
+    }
+
     function renderHighlightTable(target, weekEntries, ytdEntries, isActual) {
       const headers = isActual
         ? ["Rig", "Well", "Provider / Dept", "Operations / Action", "Saved Time (hrs)", "Cost Saving (US$)"]
@@ -3511,6 +3538,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           return {
             rig: group.rig,
             well: group.well,
+            section: dominantGroupValue(group.rows, "holeSize"),
+            field: dominantGroupValue(group.rows, "field"),
+            type: dominantGroupValue(group.rows, "type"),
             optimization: byCategory("Optimization"),
             stuckPipe: byCategory("Stuck pipe"),
             wellControl: byCategory("Well Control"),
@@ -3562,25 +3592,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       const headerHtml =
         "<thead>" +
-        '<tr><th colspan="14">Weekly Intervention Statistics and Analysis</th></tr>' +
-        '<tr>' +
-        '<th colspan="2"></th>' +
-        '<th colspan="2">Optimization</th>' +
-        '<th colspan="2">Stuck Pipe</th>' +
-        '<th colspan="2">Well Control</th>' +
-        '<th colspan="2">Operational Compliance</th>' +
-        '<th colspan="2">Reporting</th>' +
-        '<th>Days Monitored This Week</th>' +
-        '<th>Days Monitored Since Start</th>' +
-        "</tr>" +
+        '<tr><th colspan="8">Weekly Intervention Statistics and Analysis</th></tr>' +
         '<tr>' +
         '<th>Rig Name</th><th>Well Name</th>' +
-        '<th># Interventions</th><th>Validity %</th>' +
-        '<th># Interventions</th><th>Validity %</th>' +
-        '<th># Interventions</th><th>Validity %</th>' +
-        '<th># Interventions</th><th>Validity %</th>' +
-        '<th># Interventions</th><th>Validity %</th>' +
-        '<th>Days</th><th>Days</th>' +
+        '<th>Optimization<br><span style="font-weight:500;">Interventions / Validity</span></th>' +
+        '<th>Stuck Pipe<br><span style="font-weight:500;">Interventions / Validity</span></th>' +
+        '<th>Well Control<br><span style="font-weight:500;">Interventions / Validity</span></th>' +
+        '<th>Operational Compliance<br><span style="font-weight:500;">Interventions / Validity</span></th>' +
+        '<th>Reporting<br><span style="font-weight:500;">Interventions / Validity</span></th>' +
+        '<th>Total<br><span style="font-weight:500;">Interventions / Validity</span></th>' +
         "</tr>" +
         "</thead>";
 
@@ -3624,18 +3644,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             "<tr>" +
             "<td>" + escapeHtml(row.rig) + "</td>" +
             "<td>" + escapeHtml(row.well) + "</td>" +
-            "<td>" + escapeHtml(String(row.optimization.count)) + "</td>" +
-            "<td>" + escapeHtml(row.optimization.validity) + "</td>" +
-            "<td>" + escapeHtml(String(row.stuckPipe.count)) + "</td>" +
-            "<td>" + escapeHtml(row.stuckPipe.validity) + "</td>" +
-            "<td>" + escapeHtml(String(row.wellControl.count)) + "</td>" +
-            "<td>" + escapeHtml(row.wellControl.validity) + "</td>" +
-            "<td>" + escapeHtml(String(row.operationalCompliance.count)) + "</td>" +
-            "<td>" + escapeHtml(row.operationalCompliance.validity) + "</td>" +
-            "<td>" + escapeHtml(String(row.reporting.count)) + "</td>" +
-            "<td>" + escapeHtml(row.reporting.validity) + "</td>" +
-            "<td><strong>" + escapeHtml(String(row.monitoredThisWeek)) + "</strong></td>" +
-            "<td><strong>" + escapeHtml(String(row.monitoredSinceStart)) + "</strong></td>" +
+            "<td>" + escapeHtml(countAndValidityCell(row.optimization)) + "</td>" +
+            "<td>" + escapeHtml(countAndValidityCell(row.stuckPipe)) + "</td>" +
+            "<td>" + escapeHtml(countAndValidityCell(row.wellControl)) + "</td>" +
+            "<td>" + escapeHtml(countAndValidityCell(row.operationalCompliance)) + "</td>" +
+            "<td>" + escapeHtml(countAndValidityCell(row.reporting)) + "</td>" +
+            "<td><strong>" + escapeHtml(countAndValidityCell(row.total)) + "</strong></td>" +
             "</tr>"
           );
         })
@@ -3644,22 +3658,89 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           "<tr>" +
           "<td><strong>Total</strong></td>" +
           "<td></td>" +
-          "<td><strong>" + escapeHtml(String(totalRow.optimization.count)) + "</strong></td>" +
-          "<td><strong>" + escapeHtml(pct(totalRow.optimization)) + "</strong></td>" +
-          "<td><strong>" + escapeHtml(String(totalRow.stuckPipe.count)) + "</strong></td>" +
-          "<td><strong>" + escapeHtml(pct(totalRow.stuckPipe)) + "</strong></td>" +
-          "<td><strong>" + escapeHtml(String(totalRow.wellControl.count)) + "</strong></td>" +
-          "<td><strong>" + escapeHtml(pct(totalRow.wellControl)) + "</strong></td>" +
-          "<td><strong>" + escapeHtml(String(totalRow.operationalCompliance.count)) + "</strong></td>" +
-          "<td><strong>" + escapeHtml(pct(totalRow.operationalCompliance)) + "</strong></td>" +
-          "<td><strong>" + escapeHtml(String(totalRow.reporting.count)) + "</strong></td>" +
-          "<td><strong>" + escapeHtml(pct(totalRow.reporting)) + "</strong></td>" +
-          "<td><strong>" + escapeHtml(String(totalRow.monitoredThisWeek)) + "</strong></td>" +
-          "<td><strong>" + escapeHtml(String(totalRow.monitoredSinceStart)) + "</strong></td>" +
+          "<td><strong>" + escapeHtml(String(totalRow.optimization.count) + " / " + pct(totalRow.optimization)) + "</strong></td>" +
+          "<td><strong>" + escapeHtml(String(totalRow.stuckPipe.count) + " / " + pct(totalRow.stuckPipe)) + "</strong></td>" +
+          "<td><strong>" + escapeHtml(String(totalRow.wellControl.count) + " / " + pct(totalRow.wellControl)) + "</strong></td>" +
+          "<td><strong>" + escapeHtml(String(totalRow.operationalCompliance.count) + " / " + pct(totalRow.operationalCompliance)) + "</strong></td>" +
+          "<td><strong>" + escapeHtml(String(totalRow.reporting.count) + " / " + pct(totalRow.reporting)) + "</strong></td>" +
+          "<td><strong>" + escapeHtml(String(
+            totalRow.optimization.count +
+            totalRow.stuckPipe.count +
+            totalRow.wellControl.count +
+            totalRow.operationalCompliance.count +
+            totalRow.reporting.count
+          ) + " / " + formatPercent((
+            totalRow.optimization.validityCount +
+            totalRow.stuckPipe.validityCount +
+            totalRow.wellControl.validityCount +
+            totalRow.operationalCompliance.validityCount +
+            totalRow.reporting.validityCount
+          ) / Math.max(
+            totalRow.optimization.den +
+            totalRow.stuckPipe.den +
+            totalRow.wellControl.den +
+            totalRow.operationalCompliance.den +
+            totalRow.reporting.den,
+            1
+          ))) + "</strong></td>" +
           "</tr>"
         );
 
       target.innerHTML = '<div class="table-wrap"><table class="stats-table">' + headerHtml + "<tbody>" + bodyHtml + "</tbody></table></div>";
+    }
+
+    function renderWeeklyMonitoredWellsTable(target, rows) {
+      if (!rows.length) {
+        target.innerHTML = '<div class="empty">No monitored wells available for the selected period.</div>';
+        return;
+      }
+
+      const totalRow = rows.reduce(
+        (acc, row) => {
+          acc.monitoredThisWeek += row.monitoredThisWeek;
+          acc.monitoredSinceStart += row.monitoredSinceStart;
+          acc.totalInterventions += row.total.count;
+          acc.validatedWeighted += row.total.count ? Number(row.total.validity.replace("%", "")) * row.total.count : 0;
+          acc.validatedDen += row.total.count;
+          return acc;
+        },
+        { monitoredThisWeek: 0, monitoredSinceStart: 0, totalInterventions: 0, validatedWeighted: 0, validatedDen: 0 }
+      );
+
+      const bodyHtml = rows
+        .map((row) => {
+          return (
+            "<tr>" +
+            "<td>" + escapeHtml(row.rig) + "</td>" +
+            "<td>" + escapeHtml(row.well) + "</td>" +
+            "<td>" + escapeHtml(row.section) + "</td>" +
+            "<td>" + escapeHtml(row.field) + "</td>" +
+            "<td>" + escapeHtml(row.type) + "</td>" +
+            "<td>" + escapeHtml(String(row.monitoredThisWeek)) + "</td>" +
+            "<td>" + escapeHtml(String(row.monitoredSinceStart)) + "</td>" +
+            "<td>" + escapeHtml(String(row.total.count)) + "</td>" +
+            "<td>" + escapeHtml(row.total.validity) + "</td>" +
+            "</tr>"
+          );
+        })
+        .join("") +
+        (
+          "<tr>" +
+          "<td><strong>Total</strong></td>" +
+          "<td></td><td></td><td></td><td></td>" +
+          "<td><strong>" + escapeHtml(String(totalRow.monitoredThisWeek)) + "</strong></td>" +
+          "<td><strong>" + escapeHtml(String(totalRow.monitoredSinceStart)) + "</strong></td>" +
+          "<td><strong>" + escapeHtml(String(totalRow.totalInterventions)) + "</strong></td>" +
+          "<td><strong>" + escapeHtml(totalRow.validatedDen ? formatPercent((totalRow.validatedWeighted / 100) / totalRow.validatedDen) : "0.0%") + "</strong></td>" +
+          "</tr>"
+        );
+
+      target.innerHTML =
+        '<div class="table-wrap"><table class="stats-table"><thead><tr>' +
+        '<th>Rig Name</th><th>Well Name</th><th>Section</th><th>Field</th><th>Type</th><th>Days Monitored (This Week)</th><th>Days Monitored (Cumulative)</th><th>Total Number of Interventions</th><th>Validated by RDH Interventions %</th>' +
+        "</tr></thead><tbody>" +
+        bodyHtml +
+        "</tbody></table></div>";
     }
 
     function buildFlatTimeGroupItems(datasets, totalKey) {
@@ -5249,6 +5330,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       renderHighlightTable(ui.potentialHighlightsTable, potentialWeek, potentialYtd, false);
       renderWeeklyStatsMetrics(ui.weeklyStatsMetrics, monitoredThisWeekDays, monitoredTotalDays);
       renderWeeklyStatsTable(ui.weeklyStatsTable, weeklyStatsRows);
+      renderWeeklyMonitoredWellsTable(ui.weeklyMonitoredWellsTable, weeklyStatsRows);
     }
 
     function setActiveView(viewId) {
