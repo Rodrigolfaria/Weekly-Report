@@ -2231,6 +2231,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       return String(row.rig || "") + "||" + String(row.well || "");
     }
 
+    function parseEditableNumber(value, fallback = 0) {
+      const text = String(value ?? "").trim();
+      if (!text) return Number(fallback || 0);
+      const parsed = Number(text.replace(/,/g, ""));
+      return Number.isFinite(parsed) ? parsed : Number(fallback || 0);
+    }
+
+    function parseEditablePercent(value, fallback = 0) {
+      const text = String(value ?? "").trim().replace(/%/g, "");
+      if (!text) return Number(fallback || 0);
+      const parsed = Number(text);
+      return Number.isFinite(parsed) ? parsed : Number(fallback || 0);
+    }
+
     function slugify(value) {
       return String(value || "")
         .toLowerCase()
@@ -3741,37 +3755,48 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         return;
       }
       const overrides = getWeeklyMonitoredOverrides();
+      const effectiveRows = rows.map((row) => {
+        const rowKey = weeklyMonitoredRowKey(row);
+        const rowOverrides = overrides[rowKey] || {};
+        return {
+          rowKey,
+          rig: rowOverrides.rig || row.rig || "",
+          well: rowOverrides.well || row.well || "",
+          section: rowOverrides.section || row.section || "",
+          field: rowOverrides.field || row.field || "",
+          type: rowOverrides.type || row.type || "",
+          monitoredThisWeek: parseEditableNumber(rowOverrides.monitoredThisWeek, row.monitoredThisWeek),
+          monitoredSinceStart: parseEditableNumber(rowOverrides.monitoredSinceStart, row.monitoredSinceStart),
+          totalInterventions: parseEditableNumber(rowOverrides.totalInterventions, row.total.count),
+          validatedPercent: parseEditablePercent(rowOverrides.validatedPercent, Number(String(row.total.validity || "0").replace("%", ""))),
+        };
+      });
 
-      const totalRow = rows.reduce(
+      const totalRow = effectiveRows.reduce(
         (acc, row) => {
           acc.monitoredThisWeek += row.monitoredThisWeek;
           acc.monitoredSinceStart += row.monitoredSinceStart;
-          acc.totalInterventions += row.total.count;
-          acc.validatedWeighted += row.total.count ? Number(row.total.validity.replace("%", "")) * row.total.count : 0;
-          acc.validatedDen += row.total.count;
+          acc.totalInterventions += row.totalInterventions;
+          acc.validatedWeighted += row.totalInterventions ? row.validatedPercent * row.totalInterventions : 0;
+          acc.validatedDen += row.totalInterventions;
           return acc;
         },
         { monitoredThisWeek: 0, monitoredSinceStart: 0, totalInterventions: 0, validatedWeighted: 0, validatedDen: 0 }
       );
 
-      const bodyHtml = rows
+      const bodyHtml = effectiveRows
         .map((row) => {
-          const rowKey = weeklyMonitoredRowKey(row);
-          const rowOverrides = overrides[rowKey] || {};
-          const sectionValue = rowOverrides.section || row.section || "";
-          const fieldValue = rowOverrides.field || row.field || "";
-          const typeValue = rowOverrides.type || row.type || "";
           return (
             "<tr>" +
-            "<td>" + escapeHtml(row.rig) + "</td>" +
-            "<td>" + escapeHtml(row.well) + "</td>" +
-            '<td><input type="text" class="table-inline-input" data-weekly-monitored-key="' + escapeHtml(rowKey) + '" data-weekly-monitored-field="section" value="' + escapeHtml(sectionValue) + '" placeholder="Section"></td>' +
-            '<td><input type="text" class="table-inline-input" data-weekly-monitored-key="' + escapeHtml(rowKey) + '" data-weekly-monitored-field="field" value="' + escapeHtml(fieldValue) + '" placeholder="Field"></td>' +
-            '<td><input type="text" class="table-inline-input" data-weekly-monitored-key="' + escapeHtml(rowKey) + '" data-weekly-monitored-field="type" value="' + escapeHtml(typeValue) + '" placeholder="Type"></td>' +
-            "<td>" + escapeHtml(String(row.monitoredThisWeek)) + "</td>" +
-            "<td>" + escapeHtml(String(row.monitoredSinceStart)) + "</td>" +
-            "<td>" + escapeHtml(String(row.total.count)) + "</td>" +
-            "<td>" + escapeHtml(row.total.validity) + "</td>" +
+            '<td><input type="text" class="table-inline-input" data-weekly-monitored-key="' + escapeHtml(row.rowKey) + '" data-weekly-monitored-field="rig" value="' + escapeHtml(row.rig) + '" placeholder="Rig"></td>' +
+            '<td><input type="text" class="table-inline-input" data-weekly-monitored-key="' + escapeHtml(row.rowKey) + '" data-weekly-monitored-field="well" value="' + escapeHtml(row.well) + '" placeholder="Well"></td>' +
+            '<td><input type="text" class="table-inline-input" data-weekly-monitored-key="' + escapeHtml(row.rowKey) + '" data-weekly-monitored-field="section" value="' + escapeHtml(row.section) + '" placeholder="Section"></td>' +
+            '<td><input type="text" class="table-inline-input" data-weekly-monitored-key="' + escapeHtml(row.rowKey) + '" data-weekly-monitored-field="field" value="' + escapeHtml(row.field) + '" placeholder="Field"></td>' +
+            '<td><input type="text" class="table-inline-input" data-weekly-monitored-key="' + escapeHtml(row.rowKey) + '" data-weekly-monitored-field="type" value="' + escapeHtml(row.type) + '" placeholder="Type"></td>' +
+            '<td><input type="text" class="table-inline-input" data-weekly-monitored-key="' + escapeHtml(row.rowKey) + '" data-weekly-monitored-field="monitoredThisWeek" value="' + escapeHtml(String(row.monitoredThisWeek)) + '" placeholder="Days"></td>' +
+            '<td><input type="text" class="table-inline-input" data-weekly-monitored-key="' + escapeHtml(row.rowKey) + '" data-weekly-monitored-field="monitoredSinceStart" value="' + escapeHtml(String(row.monitoredSinceStart)) + '" placeholder="Days"></td>' +
+            '<td><input type="text" class="table-inline-input" data-weekly-monitored-key="' + escapeHtml(row.rowKey) + '" data-weekly-monitored-field="totalInterventions" value="' + escapeHtml(String(row.totalInterventions)) + '" placeholder="Interventions"></td>' +
+            '<td><input type="text" class="table-inline-input" data-weekly-monitored-key="' + escapeHtml(row.rowKey) + '" data-weekly-monitored-field="validatedPercent" value="' + escapeHtml(String(row.validatedPercent)) + '" placeholder="%"></td>' +
             "</tr>"
           );
         })
@@ -3801,6 +3826,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             input.dataset.weeklyMonitoredField || "",
             input.value || ""
           );
+          renderWeeklyMonitoredWellsTable(target, rows);
         });
       });
     }
