@@ -953,6 +953,95 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       line-height: 1.45;
     }
 
+    .check-dropdown {
+      position: relative;
+    }
+
+    .check-dropdown summary {
+      list-style: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-height: 46px;
+      padding: 10px 14px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--ink);
+      cursor: pointer;
+      font: inherit;
+      user-select: none;
+    }
+
+    .check-dropdown summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .check-dropdown[open] summary {
+      border-color: rgba(18, 100, 214, 0.4);
+      box-shadow: 0 0 0 4px rgba(18, 100, 214, 0.08);
+    }
+
+    .check-dropdown-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .check-dropdown-caret {
+      color: var(--muted);
+      font-size: 12px;
+      flex: 0 0 auto;
+    }
+
+    .check-dropdown-menu {
+      margin-top: 8px;
+      max-height: 280px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      padding: 8px;
+    }
+
+    .check-option {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      cursor: pointer;
+      color: var(--ink);
+    }
+
+    .check-option:hover {
+      background: rgba(18, 100, 214, 0.08);
+    }
+
+    .check-option input {
+      margin: 0;
+      width: 15px;
+      height: 15px;
+      flex: 0 0 auto;
+    }
+
+    .check-option span {
+      min-width: 0;
+      font-size: 14px;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+
+    .field-help {
+      margin-top: 6px;
+      font-size: 12px;
+      line-height: 1.4;
+      color: var(--muted);
+    }
+
     .metric-strip {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -1114,6 +1203,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     body.theme-corona .field input::placeholder,
     body.theme-corona .table-inline-input::placeholder {
       color: #7f8896;
+    }
+
+    body.theme-corona .check-dropdown summary,
+    body.theme-corona .check-dropdown-menu {
+      background: #0f1015;
+      border-color: #2c2e33;
+      color: #f5f5f5;
+      box-shadow: none;
+    }
+
+    body.theme-corona .check-option:hover {
+      background: rgba(0, 144, 231, 0.12);
     }
 
     body.theme-corona .field input:focus,
@@ -4901,17 +5002,28 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .slice()
         .sort((left, right) => left.activityLabel.localeCompare(right.activityLabel))
         .map((opportunity) => (
-          '<option value="' + escapeHtml(opportunity.activityLabel) + '"' +
-          (selectedOpportunity.activityLabels.includes(opportunity.activityLabel) ? " selected" : "") +
-          '>' + escapeHtml(opportunity.activityLabel) + "</option>"
+          '<label class="check-option">' +
+          '<input type="checkbox" class="flat-time-activity-check" value="' + escapeHtml(opportunity.activityLabel) + '"' +
+          (selectedOpportunity.activityLabels.includes(opportunity.activityLabel) ? " checked" : "") +
+          '>' +
+          '<span>' + escapeHtml(opportunity.activityLabel) + "</span>" +
+          "</label>"
         ))
         .join("");
+      const selectedActivitiesLabel = selectedOpportunity.activityLabels.length
+        ? (selectedOpportunity.activityLabels.length <= 2
+            ? selectedOpportunity.activityLabels.join(", ")
+            : (selectedOpportunity.activityLabels.length + " activities selected"))
+        : "Choose activities";
 
       ui.flatTimeActivityDrilldown.innerHTML =
         '<div class="field" style="margin-bottom:14px; max-width:420px;">' +
-        '<label for="flat-time-drilldown-activity-select">Selected Activities</label>' +
-        '<select id="flat-time-drilldown-activity-select" multiple size="' + escapeHtml(String(Math.min(Math.max(opportunities.length, 6), 12))) + '">' + activityOptions + '</select>' +
-        '<div class="field-help">Use Cmd/Ctrl-click to select multiple activities. The benchmark below sums the selected activities.</div>' +
+        '<label for="flat-time-drilldown-activity-picker">Selected Activities</label>' +
+        '<details class="check-dropdown" id="flat-time-drilldown-activity-picker">' +
+        '<summary><span class="check-dropdown-label">' + escapeHtml(selectedActivitiesLabel) + '</span><span class="check-dropdown-caret">▼</span></summary>' +
+        '<div class="check-dropdown-menu">' + activityOptions + '</div>' +
+        '</details>' +
+        '<div class="field-help">Tick the activities you want to combine. The benchmark below sums the selected activities.</div>' +
         '</div>' +
         '<div class="metric-strip" style="margin-bottom:14px;">' +
         '<div class="metric-pill"><div class="label">Selected Activities</div><div class="value"><span class="value-main">' + escapeHtml(String(selectedOpportunity.labelCount)) + '</span><span class="value-suffix">' + escapeHtml(selectedOpportunity.labelCount === 1 ? "activity" : "activities") + '</span></div><div class="meta">' + selectedOpportunity.activityLabels.map((label) => flatTimeActivityLabelHtml(label)).join("<br>") + '</div></div>' +
@@ -4930,14 +5042,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         ).join('') +
         '</tbody></table></div>';
 
-      const drilldownSelect = document.getElementById("flat-time-drilldown-activity-select");
-      if (drilldownSelect) {
-        drilldownSelect.addEventListener("change", () => {
-          flatTimeState.focusActivities = Array.from(drilldownSelect.selectedOptions || []).map((option) => option.value).filter(Boolean);
+      Array.from(document.querySelectorAll(".flat-time-activity-check")).forEach((checkbox) => {
+        checkbox.addEventListener("change", () => {
+          flatTimeState.focusActivities = Array.from(document.querySelectorAll(".flat-time-activity-check:checked"))
+            .map((input) => input.value)
+            .filter(Boolean);
+          if (!flatTimeState.focusActivities.length && checkbox.value) {
+            flatTimeState.focusActivities = [checkbox.value];
+          }
           flatTimeState.focusActivity = flatTimeState.focusActivities[0] || "";
           renderFlatTime();
         });
-      }
+      });
 
       ui.flatTimeDrilldownNote.textContent =
         'Selected well: ' + selectedDataset.subjectWell + ' • selected activities: ' + selectedOpportunity.activityLabels.join(", ") + '. ' +
