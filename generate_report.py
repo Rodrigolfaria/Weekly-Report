@@ -3396,6 +3396,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       return [
         row.description,
         row.recommendation,
+        row.justification,
         row.parameter,
         row.type,
         row.app,
@@ -6315,6 +6316,7 @@ def build_intervention_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
             "actual": normalize_text(row.get("Actual")),
             "description": normalize_text(row.get("Intervention Description")),
             "recommendation": normalize_text(row.get("Recommendation")),
+            "justification": normalize_text(row.get("Cost Saving/Potential Cost Avoidance Justification")),
             "validationText": normalize_text(row.get("RTOC/RDH Validation (Y/N)")),
             "isValidated": normalize_text(row.get("RTOC/RDH Validation (Y/N)")).lower() in {"yes", "y", "true"},
             "rtocComments": normalize_text(row.get("RTOC Comments")),
@@ -6342,6 +6344,7 @@ def build_intervention_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
             record["parameter"],
             record["description"],
             record["recommendation"],
+            record["justification"],
             record["rtocComments"],
             record["rigComment"],
             record["rtesRep"],
