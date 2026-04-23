@@ -1042,6 +1042,66 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       color: var(--muted);
     }
 
+    .table-summary-stack {
+      display: grid;
+      gap: 18px;
+    }
+
+    .table-summary-block {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: linear-gradient(180deg, #ffffff, #f8fbff);
+      overflow: hidden;
+    }
+
+    .table-summary-heading {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(18, 100, 214, 0.08), rgba(18, 100, 214, 0.02));
+    }
+
+    .table-summary-heading strong {
+      display: block;
+      color: var(--ink);
+      font-size: 16px;
+      margin-bottom: 4px;
+    }
+
+    .table-summary-heading span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .table-summary-table table {
+      min-width: 980px;
+    }
+
+    .table-summary-meta {
+      font-weight: 700;
+      text-align: center;
+      vertical-align: middle;
+      background: rgba(18, 100, 214, 0.04);
+    }
+
+    .table-summary-major strong {
+      display: block;
+      font-size: 15px;
+      color: var(--ink);
+      margin-bottom: 6px;
+    }
+
+    .table-summary-major span {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .table-summary-missing {
+      color: var(--muted);
+      font-weight: 700;
+    }
+
     .metric-strip {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -1211,6 +1271,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       border-color: #2c2e33;
       color: #f5f5f5;
       box-shadow: none;
+    }
+
+    body.theme-corona .table-summary-block {
+      background: #191c24;
+      border-color: #2c2e33;
+    }
+
+    body.theme-corona .table-summary-heading {
+      background: linear-gradient(180deg, rgba(0, 144, 231, 0.12), rgba(0, 144, 231, 0.04));
+      border-bottom-color: #2c2e33;
+    }
+
+    body.theme-corona .table-summary-meta {
+      background: rgba(255, 255, 255, 0.03);
     }
 
     body.theme-corona .check-option:hover {
@@ -1902,6 +1976,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 <select id="flat-time-mode">
                   <option value="executive" selected>Executive</option>
                   <option value="engineering">Engineering</option>
+                  <option value="table-summary">Table Summary</option>
                 </select>
               </div>
               <div class="field" style="min-width: 220px;">
@@ -1926,6 +2001,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
         <section class="panel section" data-flat-mode="executive engineering">
           <div id="flat-time-summary" class="metric-strip"></div>
+        </section>
+
+        <section class="panel section" data-flat-mode="table-summary">
+          <div class="report-card">
+            <h3>Selected Well Table Summary</h3>
+            <p class="report-note">Section-by-section summary for the selected well. Mean Flat Time is calculated from the loaded offsets in the current scope, while Actual is the selected well total for each major flat time operation.</p>
+            <div id="flat-time-table-summary"></div>
+          </div>
         </section>
 
         <section class="panel section" data-flat-mode="executive engineering">
@@ -2203,6 +2286,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       flatTimeClearUploads: document.getElementById("flat-time-clear-uploads"),
       flatTimeDatasetTags: document.getElementById("flat-time-dataset-tags"),
       flatTimeSummary: document.getElementById("flat-time-summary"),
+      flatTimeTableSummary: document.getElementById("flat-time-table-summary"),
       flatTimeWellRanking: document.getElementById("flat-time-well-ranking"),
       flatTimeParetoChart: document.getElementById("flat-time-pareto-chart"),
       flatTimeAllWellsSections: document.getElementById("flat-time-all-wells-sections"),
@@ -2642,6 +2726,163 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     function formatFlatTimeSectionSize(sectionSize) {
       return sectionSize === "__no_section__" ? "No section size" : sectionSize + '"';
+    }
+
+    function deriveFlatTimeAreaLabel(subjectWell) {
+      const token = String(subjectWell || "").trim().split(/[-_]/)[0] || "";
+      const match = token.match(/[A-Za-z]+/);
+      return match ? match[0].toUpperCase() : "N/A";
+    }
+
+    const FLAT_TIME_GROUP_LABELS = {
+      DRLG: "Drilling Flat Time",
+      WBCO: "WBCO",
+      CT: "Hole Condition Trip",
+      CSG: "Run & CMT Csg / Liner",
+      BOP: "Work on BOP",
+      WH: "Well Head Work",
+      LOG: "Logging",
+      COMP: "Run Completion",
+      MAIN: "Main Operations",
+      RM: "Reaming / Conditioning",
+      OT: "Other",
+      SUSP: "Suspension",
+      TSMF: "Tubular / Completion Tools",
+      TINL: "Tubing / Liner",
+      FISH: "Fishing",
+      KILL: "Kill Operations",
+      MILL: "Milling",
+      PA: "Pressure Activities",
+      DCOM: "Downhole Completion",
+    };
+
+    const FLAT_TIME_GROUP_ORDER = ["DRLG", "WBCO", "CT", "CSG", "BOP", "WH", "LOG", "COMP", "MAIN", "RM", "OT", "SUSP", "TSMF", "TINL", "FISH", "KILL", "MILL", "PA", "DCOM"];
+
+    function flatTimeGroupDisplayLabel(groupName) {
+      return FLAT_TIME_GROUP_LABELS[groupName] || groupName || "Unknown";
+    }
+
+    function compareFlatTimeGroups(left, right) {
+      const leftIndex = FLAT_TIME_GROUP_ORDER.indexOf(left);
+      const rightIndex = FLAT_TIME_GROUP_ORDER.indexOf(right);
+      if (leftIndex >= 0 && rightIndex >= 0) return leftIndex - rightIndex;
+      if (leftIndex >= 0) return -1;
+      if (rightIndex >= 0) return 1;
+      return String(left).localeCompare(String(right));
+    }
+
+    function summarizeFlatTimeActivityCodes(activityLabels) {
+      const codes = Array.from(
+        new Set(
+          (activityLabels || [])
+            .map((label) => String(label || "").split("-").filter(Boolean).pop() || "")
+            .filter(Boolean)
+        )
+      ).sort((left, right) => left.localeCompare(right));
+
+      if (!codes.length) return "";
+
+      return codes
+        .map((code) => {
+          const description =
+            (FLAT_TIME_ACTIVITY_TRANSLATIONS.activities || {})[code] ||
+            (FLAT_TIME_ACTIVITY_TRANSLATIONS.generic || {})[code] ||
+            "";
+          return description ? code + " (" + description + ")" : code;
+        })
+        .join(", ");
+    }
+
+    function buildSelectedWellTableSummaryRows(selectedDataset, opportunities, selectedSectionSize) {
+      if (!selectedDataset || !opportunities.length) return [];
+
+      const sectionMap = new Map();
+      opportunities.forEach((opportunity) => {
+        const sectionSize = opportunity.sectionSize || "__no_section__";
+        if (selectedSectionSize && sectionSize !== selectedSectionSize) return;
+        if (!sectionMap.has(sectionSize)) sectionMap.set(sectionSize, new Map());
+        const groupMap = sectionMap.get(sectionSize);
+        if (!groupMap.has(opportunity.groupLabel)) {
+          groupMap.set(opportunity.groupLabel, {
+            groupLabel: opportunity.groupLabel,
+            label: flatTimeGroupDisplayLabel(opportunity.groupLabel),
+            meanHours: 0,
+            actualHours: 0,
+            activityLabels: [],
+          });
+        }
+        const entry = groupMap.get(opportunity.groupLabel);
+        entry.meanHours += Number(opportunity.meanValue || 0);
+        entry.actualHours += Number(opportunity.ranked.find((item) => item.datasetId === selectedDataset.id)?.value || 0);
+        entry.activityLabels.push(opportunity.activityLabel);
+      });
+
+      return Array.from(sectionMap.entries())
+        .map(([sectionSize, groupMap]) => ({
+          sectionSize,
+          sectionLabel: formatFlatTimeSectionSize(sectionSize),
+          groups: Array.from(groupMap.values())
+            .filter((item) => item.meanHours > 0 || item.actualHours > 0)
+            .sort((left, right) => compareFlatTimeGroups(left.groupLabel, right.groupLabel)),
+        }))
+        .filter((item) => item.groups.length)
+        .sort((left, right) => compareFlatTimeSectionSizes(left.sectionSize, right.sectionSize));
+    }
+
+    function renderFlatTimeTableSummary(target, selectedDataset, opportunities, selectedSectionSize) {
+      if (!selectedDataset || !opportunities.length) {
+        target.innerHTML = '<div class="empty">Choose a well and load comparable offsets to build the table summary.</div>';
+        return;
+      }
+
+      const sectionRows = buildSelectedWellTableSummaryRows(selectedDataset, opportunities, selectedSectionSize);
+      if (!sectionRows.length) {
+        target.innerHTML = '<div class="empty">No section summary is available for the selected well in the current scope.</div>';
+        return;
+      }
+
+      const areaLabel = deriveFlatTimeAreaLabel(selectedDataset.subjectWell);
+      const blocks = sectionRows.map((sectionRow, sectionIndex) => {
+        const rowSpan = sectionRow.groups.length;
+        const rowsHtml = sectionRow.groups
+          .map((groupRow, rowIndex) => {
+            const metaColumns = rowIndex === 0
+              ? (
+                  '<td class="table-summary-meta" rowspan="' + rowSpan + '">' + escapeHtml(String(sectionIndex + 1)) + '</td>' +
+                  '<td class="table-summary-meta" rowspan="' + rowSpan + '">' + escapeHtml(areaLabel) + '</td>' +
+                  '<td class="table-summary-meta" rowspan="' + rowSpan + '">' + escapeHtml(selectedDataset.rigLabel || "Rig not mapped") + '</td>' +
+                  '<td class="table-summary-meta" rowspan="' + rowSpan + '">' + escapeHtml(selectedDataset.subjectWell) + '</td>' +
+                  '<td class="table-summary-meta" rowspan="' + rowSpan + '">' + escapeHtml(sectionRow.sectionLabel) + '</td>'
+                )
+              : "";
+            const codesSummary = summarizeFlatTimeActivityCodes(groupRow.activityLabels);
+            const meanHtml = groupRow.meanHours > 0 ? escapeHtml(formatNumber(groupRow.meanHours)) : '<span class="table-summary-missing">-</span>';
+            const actualHtml = groupRow.actualHours > 0 ? escapeHtml(formatNumber(groupRow.actualHours)) : '<span class="table-summary-missing">-</span>';
+            return (
+              '<tr>' +
+              metaColumns +
+              '<td class="table-summary-major" title="' + escapeHtml(codesSummary) + '">' +
+              '<strong>' + escapeHtml(groupRow.label) + '</strong>' +
+              '<span>(' + escapeHtml(codesSummary || "No coded activities") + ')</span>' +
+              '</td>' +
+              '<td style="text-align:center; font-weight:700;">' + meanHtml + '</td>' +
+              '<td style="text-align:center; font-weight:700;">' + actualHtml + '</td>' +
+              '</tr>'
+            );
+          })
+          .join("");
+
+        return (
+          '<div class="table-summary-block">' +
+          '<div class="table-summary-heading"><strong>' + escapeHtml(sectionRow.sectionLabel + " Summary") + '</strong><span>' + escapeHtml(selectedDataset.subjectWell + " • " + (selectedDataset.rigLabel || "Rig not mapped")) + '</span></div>' +
+          '<div class="table-wrap table-summary-table"><table><thead><tr>' +
+          '<th>Num. #</th><th>Area</th><th>Rig Name</th><th>Well Name</th><th>Phase</th><th>Major Flat time OPS</th><th>Mean Flat Time (hrs)</th><th>Actual (hrs)</th>' +
+          '</tr></thead><tbody>' + rowsHtml + '</tbody></table></div>' +
+          '</div>'
+        );
+      }).join("");
+
+      target.innerHTML = '<div class="table-summary-stack">' + blocks + '</div>';
     }
 
     function compareFlatTimeSectionSizes(left, right) {
@@ -5319,6 +5560,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         ui.flatTimeTitle.textContent = "No flat time datasets loaded";
         ui.flatTimeSubtitle.textContent = "Use the CSV uploader to compare benchmark files.";
         ui.flatTimeSummary.innerHTML = '<div class="empty">Upload flat time CSV files to start the comparison.</div>';
+        ui.flatTimeTableSummary.innerHTML = '<div class="empty">Upload flat time CSV files to build the selected well table summary.</div>';
         ui.flatTimeWellRanking.innerHTML = '<div class="empty">Upload flat time CSV files to rank wells by excess time.</div>';
         ui.flatTimeParetoChart.innerHTML = '<div class="empty">Upload flat time CSV files to build a Pareto of recoverable hours.</div>';
         ui.flatTimeAllWellsSections.innerHTML = '<div class="empty">Upload flat time CSV files to summarize all wells by section.</div>';
@@ -5361,6 +5603,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         ui.flatTimeTitle.textContent = "No data for selected section size";
         ui.flatTimeSubtitle.textContent = "Try another rig or section size, or switch back to all sections.";
         ui.flatTimeSummary.innerHTML = '<div class="empty">No benchmark activities match the selected section size.</div>';
+        ui.flatTimeTableSummary.innerHTML = '<div class="empty">No selected well table summary is available for this section size.</div>';
         ui.flatTimeWellRanking.innerHTML = '<div class="empty">No well ranking available for this section size.</div>';
         ui.flatTimeParetoChart.innerHTML = '<div class="empty">No Pareto data available for this section size.</div>';
         ui.flatTimeAllWellsSections.innerHTML = '<div class="empty">No well-section summary available for this section size.</div>';
@@ -5448,6 +5691,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const sectionBenchmarkItems = buildSectionBenchmarkItems(datasets, metricKey, allOpportunities);
       const rigBenchmarkRows = buildRigBenchmarkSummary(datasets, allOpportunities);
       const opportunityPipeline = buildOpportunityPipeline(allOpportunities).slice(0, Math.max(topN, 8));
+
+      renderFlatTimeTableSummary(ui.flatTimeTableSummary, selectedDataset, allOpportunities, selectedSectionSize);
 
       renderTableHtml(
         ui.flatTimeWellRanking,
