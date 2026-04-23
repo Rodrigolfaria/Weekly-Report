@@ -1,105 +1,105 @@
-# Automacao do Reporte
+# Weekly Report Automation
 
-O app agora suporta dois fluxos:
+The app currently supports three main workflows:
 
-- upload de `.xlsx` ou `Intervention Log .csv` pela interface
-- abertura do dashboard sem workbook, para usar a aba `Flat Time` somente com `.csv`
-- traducao de atividades no `Flat Time` por hover, usando `Aramco Activity Codes.csv` na raiz do app
+- upload an `.xlsx` workbook or an `Intervention Log .csv` file through the interface
+- open the dashboard without a workbook and use the `Flat Time` tab with `.csv` files only
+- use automatic `Flat Time` activity translation on hover through `Aramco Activity Codes.csv` stored in the app root
 
-## Como funciona
+## How It Works
 
-- o usuario abre o servidor local
-- faz upload do arquivo `.xlsx` ou `Intervention Log .csv` pela interface, ou abre o dashboard sem workbook
-- o dashboard e o `Weekly Report` sao gerados automaticamente
-- os arquivos enviados nao ficam salvos no servidor
-- a aba `Flat Time` pode funcionar so com `.csv`, mesmo sem workbook carregado
+- the user starts the local server
+- uploads an `.xlsx` file or an `Intervention Log .csv` file through the interface, or opens the dashboard without a workbook
+- the `Interactive Dashboard` and `Weekly Report` are generated automatically
+- uploaded files are processed in memory and are not stored on the server
+- the `Flat Time` tab can work entirely from `.csv` files, even with no workbook loaded
 
-## Rodar o app
+## Run The App
 
-Na pasta do projeto:
+From the project folder:
 
 ```bash
 python3 server.py
 ```
 
-Depois abra:
+Then open:
 
 ```text
 http://127.0.0.1:8000
 ```
 
-## Deploy no Coolify
+## Coolify Deployment
 
-Os arquivos de deploy ja foram adicionados:
+The deployment files are already included:
 
 - `Dockerfile`
 - `requirements.txt`
 - `.dockerignore`
 
-Configuracao recomendada no Coolify:
+Recommended Coolify configuration:
 
-1. selecione o repositorio `Weekly-Report`
-2. use o `Dockerfile` da raiz
-3. mantenha a porta `8000`
-4. comando de start:
+1. Select the `Weekly-Report` repository
+2. Use the root `Dockerfile`
+3. Keep port `8000`
+4. Use this start command:
 
 ```text
 python server.py
 ```
 
-O servidor ja aceita `HOST` e `PORT` por variavel de ambiente, entao ele funciona bem em container.
+The server already supports `HOST` and `PORT` environment variables, so it works well in containers.
 
-## Endurecimento de seguranca
+## Security Hardening
 
-Para ambientes corporativos mais restritos, o app agora suporta:
+For more restrictive corporate environments, the app supports:
 
-- autenticacao basica opcional
-- allowlist opcional por IP ou rede
-- headers de seguranca HTTP
-- processamento do `.xlsx` somente em memoria
+- optional Basic Authentication
+- optional IP or network allowlisting
+- HTTP security headers
+- in-memory `.xlsx` processing only
 
-Variaveis de ambiente uteis no Coolify:
+Useful environment variables for Coolify:
 
 ```text
 HOST=0.0.0.0
 PORT=8000
-BASIC_AUTH_USER=seu_usuario
-BASIC_AUTH_PASSWORD=sua_senha_forte
+BASIC_AUTH_USER=your_user
+BASIC_AUTH_PASSWORD=your_strong_password
 ALLOWED_IPS=187.77.250.164,10.0.0.0/8,192.168.0.0/16
 ```
 
-Observacoes:
+Notes:
 
-- `BASIC_AUTH_USER` e `BASIC_AUTH_PASSWORD` protegem o site inteiro
-- `ALLOWED_IPS` aceita IPs individuais e redes CIDR separadas por virgula
-- `/health` continua aberto para o healthcheck do deploy
+- `BASIC_AUTH_USER` and `BASIC_AUTH_PASSWORD` protect the entire site
+- `ALLOWED_IPS` accepts individual IPs and CIDR ranges separated by commas
+- `/health` remains open for deployment health checks
 
-## Fluxo de uso
+## Usage Flow
 
-1. clique em `Upload And Open Report` e escolha um `.xlsx` ou `Intervention Log .csv`
-2. ou use `Open Dashboard Without Workbook` para entrar direto no app
-3. sem workbook, a aba `Flat Time` continua utilizavel com upload de `.csv`
-4. use as abas `Interactive Dashboard`, `Weekly Report` e `Flat Time`
+1. Click `Upload And Open Report` and choose an `.xlsx` file or `Intervention Log .csv`
+2. Or use `Open Dashboard Without Workbook` to enter the app directly
+3. Without a workbook, the `Flat Time` tab still works with `.csv` uploads
+4. Use the `Interactive Dashboard`, `Weekly Report`, and `Flat Time` tabs
 
-## Traducao de atividades no Flat Time
+## Flat Time Activity Translation
 
-- se o arquivo `Aramco Activity Codes.csv` estiver na raiz do app, o dashboard usa esse arquivo automaticamente
-- as descricoes aparecem no `hover` dos nomes das atividades na aba `Flat Time`
-- em deploy, mantenha esse arquivo junto do projeto para nao depender de upload manual
+- if `Aramco Activity Codes.csv` is present in the app root, the dashboard uses it automatically
+- descriptions appear on hover over activity names in the `Flat Time` tab
+- in deployment, keep this file in the project so the app does not depend on manual upload
 
-## Arquivos principais
+## Main Files
 
-- `server.py`: sobe o servidor, recebe uploads e abre o dashboard
-- `generate_report.py`: gera o dashboard HTML
-- `Dockerfile`: imagem para deploy no Coolify
-- `requirements.txt`: dependencias Python
-- `report_output/report.html`: ultimo HTML gerado
+- `server.py`: starts the server, receives uploads, and opens the dashboard
+- `generate_report.py`: generates the HTML dashboard
+- `Dockerfile`: deployment image for Coolify
+- `requirements.txt`: Python dependencies
+- `report_output/report.html`: latest generated HTML output
 
-## Observacao importante
+## Important Notes
 
-- o app nao precisa mais que a planilha fique dentro do projeto
-- o arquivo enviado e processado somente em memoria
-- nenhum `.xlsx` fica embutido no servidor
-- em ambientes corporativos, `.csv` normalmente passa com menos restricao porque e texto simples, enquanto `.xlsx` e um pacote Office compactado e costuma ser inspecionado por antivirus, DLP, filtro de upload e politicas anti-malware
-- no modo `CSV`, o sistema considera que o arquivo representa a aba `Intervention Log`
-- no modo `CSV`, secoes que dependem de outras abas, como `RTES CA`, ficam vazias por falta de fonte adicional
+- the app no longer requires the spreadsheet to be stored inside the project
+- uploaded files are processed in memory only
+- no `.xlsx` file is bundled on the server
+- in corporate environments, `.csv` usually passes more easily because it is plain text, while `.xlsx` is a compressed Office package and is often inspected by antivirus, DLP, upload filters, and anti-malware policies
+- in `CSV` mode, the system assumes the file represents the `Intervention Log` sheet
+- in `CSV` mode, sections that depend on other workbook tabs, such as `RTES CA`, remain empty because no additional source data is available
