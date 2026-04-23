@@ -1904,6 +1904,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                   <option value="engineering">Engineering</option>
                 </select>
               </div>
+              <div class="field" style="min-width: 210px;">
+                <label for="flat-time-heatmap-mode">Activity Heatmap View</label>
+                <select id="flat-time-heatmap-mode">
+                  <option value="gap" selected>Gap vs Ideal</option>
+                  <option value="actual">Actual Hours</option>
+                </select>
+              </div>
               <div class="field" style="min-width: 220px;">
                 <label for="flat-time-well">Selected Well</label>
                 <select id="flat-time-well">
@@ -2029,6 +2036,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <div class="report-card">
               <h3>Group Comparison</h3>
               <p class="report-note">Compare the largest flat time group totals across all uploaded benchmark files.</p>
+              <div id="flat-time-group-legend" class="legend"></div>
               <div id="flat-time-group-chart"></div>
             </div>
             <div class="report-card">
@@ -2097,7 +2105,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <section class="panel section" data-flat-mode="engineering">
           <div class="report-card">
             <h3>Activity Heatmap</h3>
-            <p class="report-note">Heatmap of hours above ideal by well and activity, making repeated loss patterns visible at a glance.</p>
+            <p class="report-note" id="flat-time-heatmap-note">Heatmap of hours above ideal by well and activity, making repeated loss patterns visible at a glance.</p>
             <div id="flat-time-heatmap"></div>
           </div>
         </section>
@@ -2188,6 +2196,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       flatTimeMetric: document.getElementById("flat-time-metric"),
       flatTimeTopN: document.getElementById("flat-time-top-n"),
       flatTimeMode: document.getElementById("flat-time-mode"),
+      flatTimeHeatmapMode: document.getElementById("flat-time-heatmap-mode"),
       flatTimeWell: document.getElementById("flat-time-well"),
       flatTimeUpload: document.getElementById("flat-time-upload"),
       flatTimeRecalculate: document.getElementById("flat-time-recalculate"),
@@ -2206,6 +2215,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       flatTimeSectionBenchmarkChart: document.getElementById("flat-time-section-benchmark-chart"),
       flatTimeRigSummary: document.getElementById("flat-time-rig-summary"),
       flatTimeOpportunityPipeline: document.getElementById("flat-time-opportunity-pipeline"),
+      flatTimeGroupLegend: document.getElementById("flat-time-group-legend"),
       flatTimeGroupChart: document.getElementById("flat-time-group-chart"),
       flatTimeActivityChart: document.getElementById("flat-time-activity-chart"),
       flatTimeBenchmarkTable: document.getElementById("flat-time-benchmark-table"),
@@ -2216,6 +2226,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       flatTimeGroupTable: document.getElementById("flat-time-group-table"),
       flatTimeLossDrivers: document.getElementById("flat-time-loss-drivers"),
       flatTimeVariabilityChart: document.getElementById("flat-time-variability-chart"),
+      flatTimeHeatmapNote: document.getElementById("flat-time-heatmap-note"),
       flatTimeHeatmap: document.getElementById("flat-time-heatmap"),
       flatTimePerfectChart: document.getElementById("flat-time-perfect-chart"),
       flatTimeModeSections: Array.from(document.querySelectorAll("#flat-time-view [data-flat-mode]")),
@@ -2251,6 +2262,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       focusWell: "",
       focusActivity: "",
       focusActivities: [],
+      heatmapMode: "gap",
     };
 
     function getChartTheme() {
@@ -5139,22 +5151,23 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         '</svg></div>';
     }
 
-    function renderHeatmap(target, datasets, opportunities, topN) {
+    function renderHeatmap(target, datasets, opportunities, topN, mode) {
       if (!datasets.length || !opportunities.length) {
         target.innerHTML = '<div class="empty">No heatmap data available.</div>';
         return;
       }
 
+      const heatmapMode = mode === "actual" ? "actual" : "gap";
       const rows = datasets.slice();
       const columns = opportunities
         .slice()
         .sort((left, right) => right.totalRecoverableHours - left.totalRecoverableHours)
         .slice(0, Math.max(6, topN));
-      const maxGap = Math.max(
+      const maxValue = Math.max(
         ...rows.flatMap((dataset) =>
           columns.map((opportunity) => {
             const actual = Number(opportunity.ranked.find((entry) => entry.datasetId === dataset.id)?.value || 0);
-            return Math.max(actual - opportunity.idealTime, 0);
+            return heatmapMode === "actual" ? actual : Math.max(actual - opportunity.idealTime, 0);
           })
         ),
         0
@@ -5167,11 +5180,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const bodyHtml = rows.map((dataset) => {
         const cells = columns.map((opportunity) => {
           const actual = Number(opportunity.ranked.find((entry) => entry.datasetId === dataset.id)?.value || 0);
-          const gap = Math.max(actual - opportunity.idealTime, 0);
-          const opacity = maxGap > 0 ? Math.max(0.12, gap / maxGap) : 0;
-          const bg = gap > 0 ? 'rgba(200, 30, 90, ' + opacity.toFixed(2) + ')' : 'rgba(18, 100, 214, 0.06)';
-          const color = gap > 0.01 ? '#ffffff' : 'var(--ink)';
-          return '<td style="background:' + bg + '; color:' + color + '; font-weight:700; text-align:center;">' + escapeHtml(formatNumber(gap)) + '</td>';
+          const value = heatmapMode === "actual" ? actual : Math.max(actual - opportunity.idealTime, 0);
+          const opacity = maxValue > 0 ? Math.max(0.12, value / maxValue) : 0;
+          const bg = value > 0 ? 'rgba(200, 30, 90, ' + opacity.toFixed(2) + ')' : 'rgba(18, 100, 214, 0.06)';
+          const color = value > 0.01 ? '#ffffff' : 'var(--ink)';
+          const modeLabel = heatmapMode === "actual" ? "Actual hours" : "Gap vs ideal";
+          const tooltip = modeLabel + ': ' + formatNumber(value) + ' hr' + ' | Actual: ' + formatNumber(actual) + ' hr | Ideal: ' + formatNumber(opportunity.idealTime) + ' hr';
+          return '<td title="' + escapeHtml(tooltip) + '" style="background:' + bg + '; color:' + color + '; font-weight:700; text-align:center;">' + escapeHtml(formatNumber(value)) + '</td>';
         }).join("");
         return '<tr><td><strong>' + escapeHtml(dataset.subjectWell) + '</strong><br><span style="color:var(--muted); font-size:12px;">' + escapeHtml(dataset.rigLabel || '') + '</span></td>' + cells + '</tr>';
       }).join("");
@@ -5271,6 +5286,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .join("");
     }
 
+    function renderFlatTimeSeriesLegend(target, seriesDefs) {
+      if (!target) return;
+      if (!seriesDefs || !seriesDefs.length) {
+        target.innerHTML = "";
+        return;
+      }
+      target.innerHTML = seriesDefs
+        .map((series) => (
+          '<span class="legend-item">' +
+          '<span class="legend-dot" style="background:' + escapeHtml(series.color) + ';"></span>' +
+          escapeHtml(series.label) +
+          '</span>'
+        ))
+        .join("");
+    }
+
     function renderFlatTime() {
       const allDatasets = getFlatTimeDatasets();
       const metricKey = getFlatTimeMetricKey();
@@ -5278,6 +5309,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const topN = Number(ui.flatTimeTopN.value || 10);
       const selectedRig = ui.flatTimeRig.value || "";
       const selectedSectionSize = ui.flatTimeSection.value || "";
+      flatTimeState.heatmapMode = ui.flatTimeHeatmapMode.value || flatTimeState.heatmapMode || "gap";
 
       renderFlatTimeDatasetTags(allDatasets);
       populateFlatTimeRigOptions(allDatasets);
@@ -5299,6 +5331,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         ui.flatTimeSectionBenchmarkChart.innerHTML = '<div class="empty">Upload flat time CSV files to compare sections.</div>';
         ui.flatTimeRigSummary.innerHTML = '<div class="empty">Upload flat time CSV files to summarize rigs.</div>';
         ui.flatTimeOpportunityPipeline.innerHTML = '<div class="empty">Upload flat time CSV files to build the opportunity pipeline.</div>';
+        if (ui.flatTimeGroupLegend) ui.flatTimeGroupLegend.innerHTML = "";
         ui.flatTimeGroupChart.innerHTML = '<div class="empty">No flat time group data available.</div>';
         ui.flatTimeActivityChart.innerHTML = '<div class="empty">No flat time activity data available.</div>';
         ui.flatTimeBenchmarkTable.innerHTML = '<div class="empty">No activity benchmark table available.</div>';
@@ -5310,6 +5343,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         ui.flatTimeLossDrivers.innerHTML = '<div class="empty">Upload flat time CSV files to list top loss drivers by well.</div>';
         ui.flatTimeVariabilityChart.innerHTML = '<div class="empty">Upload flat time CSV files to show variability.</div>';
         ui.flatTimeHeatmap.innerHTML = '<div class="empty">No heatmap data available.</div>';
+        if (ui.flatTimeHeatmapNote) {
+          ui.flatTimeHeatmapNote.textContent = "Switch between Actual Hours and Gap vs Ideal to see either observed activity duration or only the hours above the recommended benchmark.";
+        }
         ui.flatTimePerfectChart.innerHTML = '<div class="empty">Upload flat time CSV files to draw the perfect flat time curve.</div>';
         populateFlatTimeWellOptions([], "");
         return;
@@ -5337,6 +5373,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         ui.flatTimeSectionBenchmarkChart.innerHTML = '<div class="empty">No section benchmark available for this section size.</div>';
         ui.flatTimeRigSummary.innerHTML = '<div class="empty">No rig benchmark summary available for this section size.</div>';
         ui.flatTimeOpportunityPipeline.innerHTML = '<div class="empty">No opportunity pipeline available for this section size.</div>';
+        if (ui.flatTimeGroupLegend) ui.flatTimeGroupLegend.innerHTML = "";
         ui.flatTimeGroupChart.innerHTML = '<div class="empty">No flat time group data available for this section size.</div>';
         ui.flatTimeActivityChart.innerHTML = '<div class="empty">No flat time activity data available for this section size.</div>';
         ui.flatTimeBenchmarkTable.innerHTML = '<div class="empty">No benchmark table available for this section size.</div>';
@@ -5348,6 +5385,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         ui.flatTimeLossDrivers.innerHTML = '<div class="empty">No loss driver ranking available for this section size.</div>';
         ui.flatTimeVariabilityChart.innerHTML = '<div class="empty">No variability view available for this section size.</div>';
         ui.flatTimeHeatmap.innerHTML = '<div class="empty">No heatmap data available for this section size.</div>';
+        if (ui.flatTimeHeatmapNote) {
+          ui.flatTimeHeatmapNote.textContent = "Switch between Actual Hours and Gap vs Ideal to see either observed activity duration or only the hours above the recommended benchmark.";
+        }
         ui.flatTimePerfectChart.innerHTML = '<div class="empty">No section-sized activities available for the perfect flat time curve.</div>';
         populateFlatTimeWellOptions([], "");
         return;
@@ -5356,6 +5396,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const groupItems = buildFlatTimeGroupItems(datasets, totalKey);
       const activityItems = buildFlatTimeActivityItems(datasets, metricKey);
       const sectionLabel = selectedSectionSize ? formatFlatTimeSectionSize(selectedSectionSize) : "All section sizes";
+      if (ui.flatTimeHeatmapNote) {
+        ui.flatTimeHeatmapNote.textContent =
+          flatTimeState.heatmapMode === "actual"
+            ? "You are seeing actual observed hours for each well and activity in the current comparison set. Use this view to compare raw execution time."
+            : "You are seeing gap vs ideal hours for each well and activity. A value of 0 means the well met or beat the recommended ideal benchmark for that activity.";
+      }
 
       ui.flatTimeTitle.textContent = datasets.length + " wells compared";
       ui.flatTimeSubtitle.textContent = (selectedRig || "All rigs") + " • " + sectionLabel + " • " + datasets.map((dataset) => dataset.subjectWell).join(" vs ");
@@ -5368,6 +5414,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         color: FLAT_TIME_SERIES_COLORS[index % FLAT_TIME_SERIES_COLORS.length],
         format: (value) => formatNumber(value),
       }));
+      renderFlatTimeSeriesLegend(ui.flatTimeGroupLegend, seriesDefs);
 
       renderMultiSeriesChart(ui.flatTimeGroupChart, groupItems.slice(0, 8), seriesDefs, {
         height: 430,
@@ -5570,7 +5617,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       );
 
       renderVariabilityChart(ui.flatTimeVariabilityChart, allOpportunities, topN);
-      renderHeatmap(ui.flatTimeHeatmap, datasets, allOpportunities, topN);
+      renderHeatmap(ui.flatTimeHeatmap, datasets, allOpportunities, topN, flatTimeState.heatmapMode);
       renderPerfectFlatTimeChart(ui.flatTimePerfectChart, datasets, metricKey);
       renderFlatTimeDrilldown(datasets, allOpportunities, selectedWell, selectedActivities, rigDatasets);
       wireFlatTimeFocusActions();
@@ -6020,6 +6067,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       ui.flatTimeMetric.addEventListener("change", renderFlatTime);
       ui.flatTimeTopN.addEventListener("change", renderFlatTime);
       ui.flatTimeMode.addEventListener("change", renderFlatTime);
+      ui.flatTimeHeatmapMode.addEventListener("change", () => {
+        flatTimeState.heatmapMode = ui.flatTimeHeatmapMode.value || "gap";
+        renderFlatTime();
+      });
       ui.flatTimeWell.addEventListener("change", () => {
         flatTimeState.focusWell = ui.flatTimeWell.value || "";
         renderFlatTime();
@@ -6031,9 +6082,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         ui.flatTimeRig.value = "";
         ui.flatTimeSection.value = "";
         ui.flatTimeWell.value = "";
+        ui.flatTimeHeatmapMode.value = "gap";
         flatTimeState.focusWell = "";
         flatTimeState.focusActivity = "";
         flatTimeState.focusActivities = [];
+        flatTimeState.heatmapMode = "gap";
         renderFlatTime();
       });
       ui.flatTimeUpload.addEventListener("change", async () => {
