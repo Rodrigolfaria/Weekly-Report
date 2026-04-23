@@ -1904,13 +1904,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                   <option value="engineering">Engineering</option>
                 </select>
               </div>
-              <div class="field" style="min-width: 210px;">
-                <label for="flat-time-heatmap-mode">Activity Heatmap View</label>
-                <select id="flat-time-heatmap-mode">
-                  <option value="gap" selected>Gap vs Ideal</option>
-                  <option value="actual">Actual Hours</option>
-                </select>
-              </div>
               <div class="field" style="min-width: 220px;">
                 <label for="flat-time-well">Selected Well</label>
                 <select id="flat-time-well">
@@ -2106,6 +2099,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <div class="report-card">
             <h3>Activity Heatmap</h3>
             <p class="report-note" id="flat-time-heatmap-note">Heatmap of hours above ideal by well and activity, making repeated loss patterns visible at a glance.</p>
+            <div class="field" style="max-width: 240px; margin-bottom: 14px;">
+              <label for="flat-time-heatmap-mode">Activity Heatmap View</label>
+              <select id="flat-time-heatmap-mode">
+                <option value="gap" selected>Gap vs Ideal</option>
+                <option value="actual">Actual Hours</option>
+              </select>
+            </div>
             <div id="flat-time-heatmap"></div>
           </div>
         </section>
