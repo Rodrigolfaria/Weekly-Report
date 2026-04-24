@@ -3,6 +3,7 @@
 __pycache__/
 *.pyc
 .DS_Store
+# Generated standalone reports and local smoke-test artifacts.
 report_output/
 *.xlsx
 ~$*.xlsx

@@ -15,8 +15,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
 from generate_report import (
+    build_csv_report_html,
     build_empty_report_html,
-    build_intervention_csv_report_html,
     build_report_html,
 )
 
@@ -317,7 +317,7 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
       <div class="hero-top">
         <div>
           <h1>Weekly Report Automation</h1>
-          <p>Upload an <code>.xlsx</code> or <code>Intervention Log .csv</code> and the system generates the dashboard immediately.</p>
+          <p>Upload an <code>.xlsx</code>, <code>Intervention Log .csv</code>, or <code>Flat Time .csv</code> and the system generates the dashboard immediately.</p>
           <p>You can also open the dashboard without a workbook and use the Flat Time tab with CSV files only.</p>
         </div>
         <div class="theme-toggle-wrap">
@@ -345,7 +345,7 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
 
     <section class="section">
       <h2>How to use</h2>
-      <p>1. <code>upload a .xlsx file</code> or <code>Intervention Log .csv</code>.</p>
+      <p>1. <code>upload a .xlsx file</code>, <code>Intervention Log .csv</code>, or <code>Flat Time .csv</code>.</p>
       <p>2. or open <code>the dashboard without a workbook</code> and use <code>Flat Time</code> with CSVs.</p>
       <p>3. Review the dashboard in the browser.</p>
       <p>4. Uploaded files are not stored after processing.</p>
@@ -371,6 +371,80 @@ def render_home_page(message: str = "", is_error: bool = False) -> str:
 
     applyTheme(localStorage.getItem(THEME_STORAGE_KEY) || "classic");
   </script>
+</body>
+</html>"""
+
+
+def render_message_page(title: str, message: str, status_label: str = "Message") -> str:
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{html.escape(title)}</title>
+  <style>
+    body {{
+      margin: 0;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      color: #102033;
+      background: linear-gradient(180deg, #eef4fb 0%, #f3f7fc 100%);
+    }}
+    .page {{
+      width: min(760px, calc(100vw - 28px));
+      margin: 0 auto;
+      padding: 40px 0;
+    }}
+    .panel {{
+      background: rgba(255, 255, 255, 0.94);
+      border: 1px solid rgba(216, 226, 239, 0.92);
+      border-radius: 24px;
+      box-shadow: 0 24px 48px rgba(15, 23, 42, 0.10);
+      padding: 28px;
+    }}
+    .eyebrow {{
+      display: inline-flex;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #eef4ff;
+      color: #1264d6;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }}
+    h1 {{
+      margin: 14px 0 10px;
+      font-size: clamp(28px, 4vw, 38px);
+      letter-spacing: -0.03em;
+    }}
+    p {{
+      margin: 8px 0;
+      line-height: 1.55;
+      color: #546579;
+    }}
+    a {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 16px;
+      padding: 12px 16px;
+      border-radius: 14px;
+      background: #1264d6;
+      color: white;
+      text-decoration: none;
+      font-weight: 700;
+    }}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="panel">
+      <div class="eyebrow">{html.escape(status_label)}</div>
+      <h1>{html.escape(title)}</h1>
+      <p>{html.escape(message)}</p>
+      <a href="/">Return to dashboard</a>
+    </div>
+  </div>
 </body>
 </html>"""
 
@@ -463,11 +537,7 @@ class ReportHandler(BaseHTTPRequestHandler):
             self._send_auth_challenge()
             return
 
-        if parsed.path == "/":
-            self._send_text(HTTPStatus.OK, render_home_page())
-            return
-
-        if parsed.path == "/dashboard":
+        if parsed.path in {"/", "/dashboard"}:
             self._send_text(
                 HTTPStatus.OK,
                 build_empty_report_html(flat_time_payload={"datasets": []}),
@@ -501,13 +571,13 @@ class ReportHandler(BaseHTTPRequestHandler):
             content_length = 0
 
         if content_length <= 0:
-            self._send_text(HTTPStatus.BAD_REQUEST, render_home_page("No file was sent.", True))
+            self._send_text(HTTPStatus.BAD_REQUEST, render_message_page("Upload failed", "No file was sent.", "Error"))
             return
 
         if content_length > MAX_UPLOAD_BYTES:
             self._send_text(
                 HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
-                render_home_page("The uploaded file is too large. Please keep it under 25 MB.", True),
+                render_message_page("Upload failed", "The uploaded file is too large. Please keep it under 25 MB.", "Error"),
             )
             return
 
@@ -517,7 +587,7 @@ class ReportHandler(BaseHTTPRequestHandler):
         if not filename or not payload:
             self._send_text(
                 HTTPStatus.BAD_REQUEST,
-                render_home_page("Please choose a valid .xlsx or .csv file before uploading.", True),
+                render_message_page("Upload failed", "Please choose a valid .xlsx or .csv file before uploading.", "Error"),
             )
             return
 
@@ -531,7 +601,7 @@ class ReportHandler(BaseHTTPRequestHandler):
                     flat_time_payload={"datasets": []},
                 )
             elif lower_name.endswith(".csv"):
-                html_report = build_intervention_csv_report_html(
+                html_report = build_csv_report_html(
                     filename,
                     payload,
                     flat_time_payload={"datasets": []},
@@ -539,13 +609,13 @@ class ReportHandler(BaseHTTPRequestHandler):
             else:
                 self._send_text(
                     HTTPStatus.BAD_REQUEST,
-                    render_home_page("Only .xlsx and .csv files are supported.", True),
+                    render_message_page("Upload failed", "Only .xlsx and .csv files are supported.", "Error"),
                 )
                 return
         except Exception as exc:  # noqa: BLE001
             self._send_text(
                 HTTPStatus.INTERNAL_SERVER_ERROR,
-                render_home_page(f"Could not process the uploaded file: {exc}", True),
+                render_message_page("Upload failed", f"Could not process the uploaded file: {exc}", "Error"),
             )
             return
 

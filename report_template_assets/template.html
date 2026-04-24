@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>__TITLE__</title>
+  <style>
+__REPORT_CSS__
+  </style>
+</head>
+<body>
+  <script id="dashboard-data" type="application/json">__DATA_JSON__</script>
+
+  <div class="page">
+    <section class="hero">
+      <div class="hero-grid">
+        <div>
+          <div class="eyebrow">Interactive Operational Dashboard</div>
+          <h1>Filter by day, week, rig, field, category, app, and more.</h1>
+          <p>The report is still generated from the spreadsheet automatically, but now the HTML behaves like a small dashboard. Once opened in the browser, it recalculates KPIs, charts, rankings, and tables instantly as you apply filters.</p>
+          <p><strong>Source file:</strong> __SOURCE_FILE__<br><strong>Generated at:</strong> __GENERATED_AT__</p>
+        </div>
+
+        <div class="hero-side">
+          <h2>Quick Period</h2>
+          <div class="preset-grid">
+            <button class="preset-btn" data-preset="all">All time</button>
+            <button class="preset-btn" data-preset="last7">Last 7 days</button>
+            <button class="preset-btn" data-preset="last30">Last 30 days</button>
+            <button class="preset-btn" data-preset="last90">Last 90 days</button>
+          </div>
+          <p class="panel-note" style="color: rgba(255,255,255,0.8); margin-top: 14px;">The quick range buttons use the latest date found in the spreadsheet as the reference point, which makes them consistent even for historical datasets.</p>
+          <button id="reset-filters" class="ghost-btn" style="width: 100%;">Reset all filters</button>
+          <div class="theme-toggle-wrap">
+            <div class="theme-toggle-row">
+              <span class="theme-toggle-label">Theme</span>
+              <span id="theme-toggle-state" class="theme-toggle-state">Classic</span>
+            </div>
+            <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle dashboard theme">
+              <span id="theme-toggle-thumb" class="theme-toggle-thumb">Classic</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="view-tabs" role="tablist" aria-label="Report Views">
+      <button class="view-tab is-active" data-view="dashboard-view">Interactive Dashboard</button>
+      <button class="view-tab" data-view="flat-time-view">Flat Time</button>
+    </div>
+
+    <div id="dashboard-view" class="view-panel">
+      <div class="shell">
+      <aside class="sidebar">
+        <section class="panel">
+          <div class="panel-inner">
+            <details class="sidebar-panel">
+              <summary class="sidebar-panel-toggle">
+                <span>Filters</span>
+                <span class="sidebar-panel-chevron" aria-hidden="true">▾</span>
+              </summary>
+              <div class="sidebar-panel-body">
+              <p class="panel-note">Use the controls below to focus the report. All cards, charts, rankings, and detailed tables update together.</p>
+              <div class="filter-grid">
+              <div class="field">
+                <label for="start-date">Start Date</label>
+                <input id="start-date" type="date">
+              </div>
+              <div class="field">
+                <label for="end-date">End Date</label>
+                <input id="end-date" type="date">
+              </div>
+              <div class="field">
+                <label for="week-filter">Week</label>
+                <select id="week-filter"></select>
+              </div>
+              <div class="field">
+                <label for="month-filter">Month</label>
+                <select id="month-filter"></select>
+              </div>
+              <div class="field">
+                <label for="rig-filter">Rig</label>
+                <select id="rig-filter"></select>
+              </div>
+              <div class="field">
+                <label for="field-filter">Field</label>
+                <select id="field-filter"></select>
+              </div>
+              <div class="field">
+                <label for="well-filter">Well</label>
+                <select id="well-filter"></select>
+              </div>
+              <div class="field">
+                <label for="category-filter">Category</label>
+                <select id="category-filter"></select>
+              </div>
+              <div class="field">
+                <label for="type-filter">Type</label>
+                <select id="type-filter"></select>
+              </div>
+              <div class="field">
+                <label for="app-filter">Corva App</label>
+                <select id="app-filter"></select>
+              </div>
+              <div class="field">
+                <label for="validation-filter">Validation</label>
+                <select id="validation-filter">
+                  <option value="">All validations</option>
+                  <option value="validated">Validated only</option>
+                  <option value="not_validated">Not validated only</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="granularity-filter">Trend Granularity</label>
+                <select id="granularity-filter">
+                  <option value="day">Daily</option>
+                  <option value="week">Weekly</option>
+                  <option value="month">Monthly</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="search-filter">Search</label>
+                <input id="search-filter" type="search" placeholder="Rig, well, description, comment...">
+              </div>
+              </div>
+              </div>
+            </details>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-inner">
+            <details class="sidebar-panel">
+              <summary class="sidebar-panel-toggle">
+                <span>What To Show</span>
+                <span class="sidebar-panel-chevron" aria-hidden="true">▾</span>
+              </summary>
+              <div class="sidebar-panel-body">
+              <p class="panel-note">You asked for control over what appears on screen, so each main block can be shown or hidden independently.</p>
+              <div class="toggle-grid">
+              <label class="toggle"><input type="checkbox" data-target="summary-section" checked> Summary</label>
+              <label class="toggle"><input type="checkbox" data-target="charts-section" checked> Charts</label>
+              <label class="toggle"><input type="checkbox" data-target="rankings-section" checked> Rankings</label>
+              <label class="toggle"><input type="checkbox" data-target="details-section"> Details</label>
+              <label class="toggle"><input type="checkbox" data-target="ca-section" checked> RTES Cost Avoidance</label>
+              <label class="toggle"><input type="checkbox" data-target="notes-section"> Notes</label>
+              </div>
+              </div>
+            </details>
+          </div>
+        </section>
+      </aside>
+
+      <main class="main">
+        <section class="panel section">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">Dashboard Controls</h2>
+              <p class="section-subtitle">Switch between interactive and weekly modes and load a new workbook or CSV directly from here.</p>
+            </div>
+          </div>
+          <div class="flat-time-toolbar dashboard-mode-toolbar">
+            <div style="display:flex; gap:16px; flex-wrap:wrap;">
+              <div class="field" style="min-width: 220px;">
+                <label for="dashboard-mode">Dashboard Mode</label>
+                <select id="dashboard-mode">
+                  <option value="interactive">Interactive Dashboard</option>
+                  <option value="weekly">Weekly Report</option>
+                </select>
+              </div>
+            </div>
+            <form class="dashboard-upload-form dashboard-upload-form-inline" method="post" action="/upload" enctype="multipart/form-data">
+              <div class="field" style="min-width: 320px;">
+                <label for="dashboard-upload">Load File</label>
+                <input id="dashboard-upload" class="file-input" type="file" name="spreadsheet" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" required>
+              </div>
+              <button class="action-btn" type="submit">Load</button>
+            </form>
+          </div>
+          <div class="chips" style="margin-top: 14px;">
+            <span class="chip">Supports <code>.xlsx</code>, <code>Intervention Log .csv</code>, and <code>Flat Time .csv</code>.</span>
+          </div>
+        </section>
+
+        <section id="summary-section" class="panel section">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">Filtered Executive Summary</h2>
+              <p class="section-subtitle">The KPI cards below reflect only the records that match the current filter set. This makes the same HTML useful for daily drill-downs, weekly summaries, and focused rig reviews.</p>
+            </div>
+            <div class="status-box">
+              <strong id="results-title">Current result set</strong>
+              <span id="results-subtitle">Preparing dashboard...</span>
+            </div>
+          </div>
+          <div id="active-filters" class="chips"></div>
+          <div id="kpi-grid" class="kpis" style="margin-top: 16px;"></div>
+        </section>
+
+        <section id="charts-section" class="panel section">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">Interactive Charts</h2>
+              <p class="section-subtitle">Trend and ranking charts update immediately with every filter change. Use the trend granularity control on the left to switch between daily, weekly, and monthly views.</p>
+            </div>
+          </div>
+          <div class="two-col">
+            <div class="chart">
+              <h3>Intervention Trend</h3>
+              <div id="trend-chart" class="line-chart"></div>
+            </div>
+            <div class="chart">
+              <h3>Interventions by Category</h3>
+              <div id="category-chart" class="bar-chart"></div>
+            </div>
+          </div>
+          <div class="grid-3" style="margin-top: 18px;">
+            <div class="chart">
+              <h3>Top Rigs</h3>
+              <div id="rig-chart" class="bar-chart"></div>
+            </div>
+            <div class="chart">
+              <h3>Interventions by Type</h3>
+              <div id="type-chart" class="bar-chart"></div>
+            </div>
+            <div class="chart">
+              <h3>Corva Apps</h3>
+              <div id="app-chart" class="bar-chart"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="rankings-section" class="panel section">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">Rankings And Breakdowns</h2>
+              <p class="section-subtitle">These summary tables help compare the currently selected slice of the operation without going back to Excel.</p>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div>
+              <h3>Top Categories</h3>
+              <div id="category-table"></div>
+            </div>
+            <div>
+              <h3>Top Fields</h3>
+              <div id="field-table"></div>
+            </div>
+            <div>
+              <h3>Top Wells</h3>
+              <div id="well-table"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="details-section" class="panel section">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">Filtered Intervention Details</h2>
+              <p class="section-subtitle">This table shows the records behind the cards and charts so the report stays auditable. It is intentionally capped for browser performance, while still reflecting the filtered result set.</p>
+            </div>
+          </div>
+          <div id="intervention-table"></div>
+        </section>
+
+        <section id="ca-section" class="panel section">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">RTES Cost Avoidance</h2>
+              <p class="section-subtitle">Derived directly from the Intervention Log using cost saving values, grouped by rig within the current filter context.</p>
+            </div>
+          </div>
+          <div class="chart">
+            <h3>Cost Saving by Rig</h3>
+            <div id="ca-chart" class="bar-chart"></div>
+          </div>
+        </section>
+
+        <section id="notes-section" class="panel section">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">Automation Notes</h2>
+              <p class="section-subtitle">This interactive HTML is still static as a file, which means it remains easy to automate. The generator bakes the data and the JavaScript into one output file.</p>
+            </div>
+          </div>
+          <p class="footer-note">Next automation step: keep the spreadsheet in a known folder, run <code>python3 generate_report.py</code> on a schedule, and optionally publish the resulting HTML to a shared drive or export it to PDF for distribution.</p>
+        </section>
+      </main>
+      </div>
+    </div>
+
+    <div id="weekly-report-view" class="view-panel" hidden>
+      <div class="weekly-root">
+        <section class="panel section">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">Weekly Report</h2>
+              <p class="section-subtitle">This second tab keeps the current dashboard intact and reproduces the structure of the attached weekly Excel report inside the same HTML. It focuses on the selected date range while also showing cumulative weekly context.</p>
+            </div>
+            <div class="status-box">
+              <strong id="weekly-report-title">Preparing weekly report...</strong>
+              <span id="weekly-report-subtitle">Calculating weekly aggregates.</span>
+            </div>
+          </div>
+
+          <div class="weekly-toolbar">
+            <div style="display:flex; gap:16px; flex-wrap:wrap;">
+              <div class="field" style="min-width: 180px;">
+                <label for="weekly-report-start-date">Start Date</label>
+                <input id="weekly-report-start-date" type="date">
+              </div>
+              <div class="field" style="min-width: 180px;">
+                <label for="weekly-report-end-date">End Date</label>
+                <input id="weekly-report-end-date" type="date">
+              </div>
+              <div class="field" style="min-width: 220px;">
+                <label>&nbsp;</label>
+                <button id="weekly-export-pdf" class="action-btn" type="button">Export Weekly Report PDF</button>
+              </div>
+            </div>
+            <div class="weekly-toolbar-actions">
+              <div class="chips">
+                <span id="weekly-report-range" class="chip">Range pending</span>
+                <span class="chip">Provider column uses available source fields when contractor data is missing.</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel section">
+          <div class="weekly-banner">
+            <div>
+              <h2>Weekly Report</h2>
+              <p id="weekly-banner-copy">Styled after the attached Excel workbook, while remaining interactive and browser-friendly.</p>
+            </div>
+            <div class="chips">
+              <span class="chip" id="weekly-banner-chip-1">Week summary</span>
+              <span class="chip" id="weekly-banner-chip-2">Highlights</span>
+              <span class="chip" id="weekly-banner-chip-3">Historical context</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel section">
+          <div class="report-grid-2">
+            <div class="report-card">
+              <h3>Weekly Category of Interventions and Validity</h3>
+              <p class="report-note">Equivalent to the Excel weekly category summary for the selected period.</p>
+              <div class="legend">
+                <span class="legend-item"><span class="legend-dot" style="background:#1264d6;"></span>Interventions</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#0f766e;"></span>Rig Action</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#be123c;"></span>Validated</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#c06a0a;"></span>Validation %</span>
+              </div>
+              <div id="weekly-category-chart"></div>
+              <div id="weekly-category-table"></div>
+            </div>
+            <div class="report-card">
+              <h3>Cumulative Category of Interventions and Validity</h3>
+              <p class="report-note">Cumulative values are calculated up to the end of the selected week, so you can move backwards historically and still get period-correct totals.</p>
+              <div class="legend">
+                <span class="legend-item"><span class="legend-dot" style="background:#1264d6;"></span>Interventions</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#0f766e;"></span>Rig Action</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#be123c;"></span>Validated</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#c06a0a;"></span>Validation %</span>
+              </div>
+              <div id="cumulative-category-chart"></div>
+              <div id="cumulative-category-table"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel section">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">Intervention Summary Blocks</h2>
+              <p class="section-subtitle">This area mirrors the three Excel summary blocks: Wiper Trip, ROP, and KPI. The logic is derived from the intervention log using text and field matching, then grouped by rig and well for the selected week.</p>
+            </div>
+          </div>
+          <div class="report-grid-3">
+            <div class="report-card">
+              <h3>Wiper Trip Interventions Summary</h3>
+              <div class="legend">
+                <span class="legend-item"><span class="legend-dot" style="background:#1264d6;"></span>Saved Time</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#c81e5a;"></span>Loss Time</span>
+              </div>
+              <div id="wiper-summary-chart"></div>
+              <div id="wiper-summary-table"></div>
+            </div>
+            <div class="report-card">
+              <h3>ROP Interventions Summary</h3>
+              <div class="legend">
+                <span class="legend-item"><span class="legend-dot" style="background:#1264d6;"></span>Saved Time</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#c81e5a;"></span>Loss Time</span>
+              </div>
+              <div id="rop-summary-chart"></div>
+              <div id="rop-summary-table"></div>
+            </div>
+            <div class="report-card">
+              <h3>KPI Interventions Summary</h3>
+              <div class="legend">
+                <span class="legend-item"><span class="legend-dot" style="background:#1264d6;"></span>Saved Time</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#c81e5a;"></span>Loss Time</span>
+              </div>
+              <div id="kpi-summary-chart"></div>
+              <div id="kpi-summary-table"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel section">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">Weekly Highlights</h2>
+              <p class="section-subtitle">These tables follow the same split used in the workbook: realized savings on the left and potential savings or avoidance on the right.</p>
+            </div>
+          </div>
+          <div id="weekly-highlight-metrics" class="metric-strip" style="margin-bottom: 18px;"></div>
+          <div class="report-grid-2">
+            <div class="report-card">
+              <h3>Saved Time / Cost Saving</h3>
+              <div id="actual-highlights-table"></div>
+            </div>
+            <div class="report-card">
+              <h3>Potential Saved Time / Cost Avoidance</h3>
+              <div id="potential-highlights-table"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel section">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">Weekly Intervention Statistics and Analysis</h2>
+              <p class="section-subtitle">Rig and well level intervention counts with validity grouped by category for the selected weekly period.</p>
+            </div>
+          </div>
+          <div id="weekly-stats-metrics" class="metric-strip" style="margin-bottom: 18px;"></div>
+          <div id="weekly-stats-table"></div>
+        </section>
+
+        <section class="panel section">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">Weekly Monitored Wells Summary</h2>
+              <p class="section-subtitle">Monitored wells, dominant section and well metadata, monitored days, total interventions, and validation rate for the selected week and cumulative scope.</p>
+            </div>
+          </div>
+          <div id="weekly-monitored-wells-table"></div>
+        </section>
+
+      </div>
+    </div>
+
+    <div id="flat-time-view" class="view-panel" hidden>
+      <div class="flat-time-root">
+        <section class="panel section">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">Flat Time</h2>
+              <p class="section-subtitle">Compare flat time benchmark files to identify which activities and groups are consuming more time and where procedural improvements can reduce the total well duration.</p>
+            </div>
+            <div class="status-box">
+              <strong id="flat-time-title">Preparing flat time comparison...</strong>
+              <span id="flat-time-subtitle">Loading benchmark datasets.</span>
+            </div>
+          </div>
+
+          <div class="flat-time-toolbar">
+            <div style="display:flex; gap:16px; flex-wrap:wrap;">
+              <div class="field" style="min-width: 190px;">
+                <label for="flat-time-rig">Rig</label>
+                <select id="flat-time-rig">
+                  <option value="">All rigs</option>
+                </select>
+              </div>
+              <div class="field" style="min-width: 190px;">
+                <label for="flat-time-section">Section Size</label>
+                <select id="flat-time-section">
+                  <option value="">All section sizes</option>
+                </select>
+              </div>
+              <div class="field" style="min-width: 190px;">
+                <label for="flat-time-metric">Comparison Metric</label>
+                <select id="flat-time-metric">
+                  <option value="subject">Subject Well Time</option>
+                  <option value="mean">Mean Time</option>
+                  <option value="median">Median Time</option>
+                </select>
+              </div>
+              <div class="field" style="min-width: 190px;">
+                <label for="flat-time-top-n">Top Activities</label>
+                <select id="flat-time-top-n">
+                  <option value="8">Top 8</option>
+                  <option value="10" selected>Top 10</option>
+                  <option value="15">Top 15</option>
+                </select>
+              </div>
+              <div class="field" style="min-width: 190px;">
+                <label for="flat-time-mode">Analysis Mode</label>
+                <select id="flat-time-mode">
+                  <option value="executive" selected>Executive</option>
+                  <option value="engineering">Engineering</option>
+                  <option value="table-summary">Table Summary</option>
+                </select>
+              </div>
+              <div class="field" style="min-width: 220px;">
+                <label for="flat-time-well">Selected Well</label>
+                <select id="flat-time-well">
+                  <option value="">Auto-select worst well</option>
+                </select>
+              </div>
+            </div>
+            <div class="flat-time-upload-panel">
+              <div class="field" style="min-width: 320px;">
+                <label for="flat-time-upload">Add More CSV Files</label>
+                <input id="flat-time-upload" class="file-input" type="file" accept=".csv,text/csv" multiple>
+              </div>
+              <button id="flat-time-recalculate" class="action-btn" type="button">Recalculate</button>
+              <button id="flat-time-clear-uploads" class="action-btn" type="button">Clear All CSVs</button>
+            </div>
+          </div>
+
+          <div id="flat-time-dataset-tags" class="tag-list"></div>
+        </section>
+
+        <section class="panel section" data-flat-mode="executive engineering">
+          <div id="flat-time-summary" class="metric-strip"></div>
+        </section>
+
+        <section class="panel section" data-flat-mode="table-summary">
+          <div class="report-card">
+            <h3>Selected Well Table Summary</h3>
+            <p class="report-note">Section-by-section summary for the selected well. Mean Flat Time is calculated from the loaded offsets in the current scope, while Actual is the selected well total for each major flat time operation.</p>
+            <div id="flat-time-table-summary"></div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="executive engineering">
+          <div class="flat-time-chart-stack">
+            <div class="report-card">
+              <h3>Well Ranking by Excess Time</h3>
+              <p class="report-note">Ranks wells by time above the recommended ideal, highlighting the main activity and group driving the excess.</p>
+              <div id="flat-time-well-ranking"></div>
+            </div>
+            <div class="report-card">
+              <h3>Pareto of Recoverable Hours</h3>
+              <p class="report-note">Shows which activities concentrate the largest recoverable hours so improvement effort can be focused where it matters most.</p>
+              <div id="flat-time-pareto-chart"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="executive">
+          <div class="report-card">
+            <h3>All Wells Summary by Section</h3>
+            <div class="card-toolbar">
+              <p class="report-note">Breaks every loaded well into hole sections and shows the three most time-consuming activities inside each section. Use the layout selector to compare different executive presentations without changing the data.</p>
+              <div class="field compact-field">
+                <label for="flat-time-all-wells-layout">Summary Layout</label>
+                <select id="flat-time-all-wells-layout">
+                  <option value="ranked">Current ranked table</option>
+                  <option value="grouped" selected>Grouped by well</option>
+                  <option value="matrix">Matrix + grouped</option>
+                </select>
+              </div>
+            </div>
+            <div id="flat-time-all-wells-sections"></div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="executive">
+          <div class="flat-time-chart-stack">
+            <div class="report-card">
+              <h3>Selected Well by Section</h3>
+              <p class="report-note">Section-by-section comparison for the selected well, highlighting actual time, ideal target and recoverable gap with the top section drivers.</p>
+              <div id="flat-time-selected-well-sections"></div>
+            </div>
+            <div class="report-card">
+              <h3>Selected Well vs Loaded Offsets</h3>
+              <p class="report-note">Compares the selected well section by section against the loaded offset average and the best offset observed in the current benchmark set.</p>
+              <div id="flat-time-offset-comparison"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="executive">
+          <div class="report-card">
+            <h3>Section Heat Map</h3>
+            <p class="report-note">Shows section-level excess time by well so repeated problem sections become obvious at a glance.</p>
+            <div id="flat-time-section-heatmap"></div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="executive">
+          <div class="flat-time-chart-stack">
+            <div class="report-card">
+              <h3>Summary of Where Time Can Be Saved</h3>
+              <p class="report-note">Executive summary of recoverable hours and days by section, with the most credible recurring activity to attack next.</p>
+              <div id="flat-time-savings-summary"></div>
+            </div>
+            <div class="report-card">
+              <h3>Executive Explanation</h3>
+              <p class="report-note">Narrative explanation of why the system selected the current opportunities and how the time can be recovered.</p>
+              <div id="flat-time-narrative"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="engineering">
+          <div class="flat-time-chart-stack">
+            <div class="report-card">
+              <h3>Well vs Ideal Waterfall</h3>
+              <p class="report-note">Starts from the selected well actual flat time, subtracts the biggest activity gaps and lands on the recommended ideal total.</p>
+              <div id="flat-time-waterfall-chart"></div>
+            </div>
+            <div class="report-card">
+              <h3>Section Benchmark Chart</h3>
+              <p class="report-note">Compares each section average against the recommended ideal and shows the spread to recover.</p>
+              <div class="legend">
+                <span class="legend-item"><span class="legend-dot" style="background:#1264d6;"></span>Actual avg</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#0f766e;"></span>Recommended ideal</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#c06a0a;"></span>Spread</span>
+              </div>
+              <div id="flat-time-section-benchmark-chart"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="engineering">
+          <div class="flat-time-chart-stack">
+            <div class="report-card">
+              <h3>Rig Benchmark Summary</h3>
+              <p class="report-note">Summarizes rig-level average flat time, ideal target, excess time and the main repeating activity.</p>
+              <div id="flat-time-rig-summary"></div>
+            </div>
+            <div class="report-card">
+              <h3>Opportunity Pipeline</h3>
+              <p class="report-note">Executive list of the activities with the highest recoverable hours and the strongest case for procedural action.</p>
+              <div id="flat-time-opportunity-pipeline"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="engineering">
+          <div class="flat-time-chart-stack">
+            <div class="report-card">
+              <h3>Group Comparison</h3>
+              <p class="report-note">Compare the largest flat time group totals across all uploaded benchmark files.</p>
+              <div id="flat-time-group-legend" class="legend"></div>
+              <div id="flat-time-group-chart"></div>
+            </div>
+            <div class="report-card">
+              <h3>Top Activities By Time</h3>
+              <p class="report-note">Highlight the activities that are consuming the most time across the comparison set.</p>
+              <div id="flat-time-activity-chart"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="engineering">
+          <div class="report-card">
+            <h3>Activity Benchmark Table</h3>
+            <p class="report-note">Engineering view of each activity, including sample size, distribution, recommended ideal time, variability and recoverable hours.</p>
+            <div id="flat-time-benchmark-table"></div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="engineering">
+          <div class="report-card">
+            <h3>Drill-down Explorer</h3>
+            <p class="report-note" id="flat-time-drilldown-note">Click a well or activity in the tables above to open the benchmark, peer comparison and ideal-time logic.</p>
+            <div class="drill-grid">
+              <div>
+                <h3 style="font-size:16px; margin-bottom:10px;">Selected Well Breakdown</h3>
+                <div id="flat-time-well-drilldown"></div>
+              </div>
+              <div>
+                <h3 style="font-size:16px; margin-bottom:10px;">Selected Activity Benchmark</h3>
+                <div id="flat-time-activity-drilldown"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="engineering">
+          <div class="flat-time-chart-stack">
+            <div class="report-card">
+              <h3>Reduction Opportunity Matrix</h3>
+              <p class="report-note">Gap is calculated against the ideal achievable time for the activity. Example: if 4 wells ran near 30 hr and 1 well ran 45 hr, the gap shown is 15 hr.</p>
+              <div id="flat-time-opportunity-table"></div>
+            </div>
+            <div class="report-card">
+              <h3>Group Totals By Dataset</h3>
+              <p class="report-note">Friendly comparison table showing how each benchmark dataset is distributed by flat time group.</p>
+              <div id="flat-time-group-table"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="engineering">
+          <div class="report-grid-2">
+            <div class="report-card">
+              <h3>Top Loss Drivers by Well</h3>
+              <p class="report-note">Lists the top three activities that explain the excess time for each well.</p>
+              <div id="flat-time-loss-drivers"></div>
+            </div>
+            <div class="report-card">
+              <h3>Variability Box Plot</h3>
+              <p class="report-note">Shows spread by activity so unstable work can be separated from predictable, repeatable work.</p>
+              <div id="flat-time-variability-chart"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="engineering">
+          <div class="report-card">
+            <h3>Activity Heatmap</h3>
+            <p class="report-note" id="flat-time-heatmap-note">Heatmap of hours above ideal by well and activity, making repeated loss patterns visible at a glance.</p>
+            <div class="field" style="max-width: 240px; margin-bottom: 14px;">
+              <label for="flat-time-heatmap-mode">Activity Heatmap View</label>
+              <select id="flat-time-heatmap-mode">
+                <option value="gap" selected>Gap vs Ideal</option>
+                <option value="actual">Actual Hours</option>
+              </select>
+            </div>
+            <div id="flat-time-heatmap"></div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="engineering">
+          <div class="report-card">
+            <h3>Perfect Flat Time vs Wells</h3>
+            <p class="report-note">Compares the ideal cumulative flat time curve against the actual wells. Days are cumulative on X and depth progression is represented by section sequence on Y.</p>
+            <div id="flat-time-perfect-chart"></div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script>
+__REPORT_JS__
+  </script>
+</body>
+</html>

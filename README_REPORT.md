@@ -102,4 +102,4 @@ Notes:
 - no `.xlsx` file is bundled on the server
 - in corporate environments, `.csv` usually passes more easily because it is plain text, while `.xlsx` is a compressed Office package and is often inspected by antivirus, DLP, upload filters, and anti-malware policies
 - in `CSV` mode, the system assumes the file represents the `Intervention Log` sheet
-- in `CSV` mode, sections that depend on other workbook tabs, such as `RTES CA`, remain empty because no additional source data is available
+- in `CSV` mode, the system builds the dashboard from the available intervention data only

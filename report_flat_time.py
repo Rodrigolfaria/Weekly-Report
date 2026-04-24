@@ -18,6 +18,136 @@ def extract_flat_time_section_size(activity_name: str) -> str:
     return match.group(1) if match else "__no_section__"
 
 
+def looks_like_flat_time_csv(rows: list[list[str]]) -> bool:
+    first_column = {(row[0] if row else "").strip() for row in rows}
+    if "Subject Well" not in first_column or "Group Name" not in first_column or "Activity" not in first_column:
+        return False
+
+    for row in rows:
+        if not row or (row[0] or "").strip() != "Activity":
+            continue
+        labels = [str(cell or "").strip().lower() for cell in row[1:]]
+        if any(label.startswith("mean") for label in labels) and any(label.startswith("median") for label in labels):
+            return True
+    return False
+
+
+def parse_flat_time_matrix_rows(file_name: str, rows: list[list[str]]) -> list[dict[str, Any]]:
+    normalized_rows = [[(cell or "").strip() for cell in row] for row in rows]
+    rig_label = Path(file_name).stem.split("_")[0].strip() or "Rig not mapped"
+    dataset_map: dict[str, dict[str, Any]] = {}
+    current_group_name = ""
+    current_header: dict[str, Any] | None = None
+
+    def get_dataset(subject_well: str) -> dict[str, Any]:
+        if subject_well not in dataset_map:
+            dataset_map[subject_well] = {
+                "id": f"{Path(file_name).stem.lower().replace(' ', '-').replace('_', '-')}-{subject_well.lower().replace(' ', '-')}",
+                "fileName": file_name,
+                "subjectWell": subject_well,
+                "rigLabel": rig_label,
+                "groupsMap": {},
+            }
+        return dataset_map[subject_well]
+
+    def get_group(dataset: dict[str, Any], group_name: str) -> dict[str, Any]:
+        groups_map = dataset["groupsMap"]
+        if group_name not in groups_map:
+            groups_map[group_name] = {
+                "groupName": group_name,
+                "activities": [],
+                "totalSubjectHours": 0.0,
+                "totalMeanHours": 0.0,
+                "totalMedianHours": 0.0,
+            }
+        return groups_map[group_name]
+
+    for row in normalized_rows:
+        first = row[0] if row else ""
+        if first == "Group Name":
+            current_group_name = (row[1] if len(row) > 1 and row[1] else "Unknown").strip()
+            current_header = None
+            continue
+
+        if not current_group_name or not first or first == "Group Type":
+            continue
+
+        if first == "Activity":
+            well_columns: list[dict[str, Any]] = []
+            mean_index = -1
+            median_index = -1
+            for index, cell in enumerate(row):
+                if index == 0:
+                    continue
+                label = str(cell or "").strip()
+                if not label:
+                    continue
+                lowered = label.lower()
+                if lowered.startswith("mean"):
+                    mean_index = index
+                    continue
+                if lowered.startswith("median"):
+                    median_index = index
+                    continue
+                well_columns.append({"index": index, "label": label})
+            current_header = {
+                "wellColumns": well_columns,
+                "meanIndex": mean_index,
+                "medianIndex": median_index,
+            }
+            continue
+
+        if not current_header or not current_header["wellColumns"]:
+            continue
+
+        if first == "Total":
+            for column in current_header["wellColumns"]:
+                dataset = get_dataset(column["label"])
+                group = get_group(dataset, current_group_name)
+                group["totalSubjectHours"] = as_number(row[column["index"]] if len(row) > column["index"] else 0)
+            continue
+
+        for column in current_header["wellColumns"]:
+            subject_hours = as_number(row[column["index"]] if len(row) > column["index"] else 0)
+            if not subject_hours:
+                continue
+            dataset = get_dataset(column["label"])
+            group = get_group(dataset, current_group_name)
+            group["activities"].append(
+                {
+                    "activity": first,
+                    "sectionSize": extract_flat_time_section_size(first),
+                    "subjectHours": subject_hours,
+                    "meanHours": as_number(row[current_header["meanIndex"]] if current_header["meanIndex"] >= 0 and len(row) > current_header["meanIndex"] else 0),
+                    "medianHours": as_number(row[current_header["medianIndex"]] if current_header["medianIndex"] >= 0 and len(row) > current_header["medianIndex"] else 0),
+                }
+            )
+
+    datasets: list[dict[str, Any]] = []
+    for dataset in dataset_map.values():
+        groups = [group for group in dataset["groupsMap"].values() if group["activities"] or group["totalSubjectHours"]]
+        if not groups:
+            continue
+        for group in groups:
+            if not group["totalSubjectHours"]:
+                group["totalSubjectHours"] = sum(activity["subjectHours"] for activity in group["activities"])
+            group["totalMeanHours"] = sum(activity["meanHours"] for activity in group["activities"])
+            group["totalMedianHours"] = sum(activity["medianHours"] for activity in group["activities"])
+        datasets.append(
+            {
+                "id": dataset["id"],
+                "fileName": dataset["fileName"],
+                "subjectWell": dataset["subjectWell"],
+                "rigLabel": dataset["rigLabel"],
+                "groups": groups,
+                "totalSubjectHours": sum(group["totalSubjectHours"] for group in groups),
+                "totalMeanHours": sum(group["totalMeanHours"] for group in groups),
+                "totalMedianHours": sum(group["totalMedianHours"] for group in groups),
+            }
+        )
+    return datasets
+
+
 def parse_flat_time_rows(file_name: str, rows: list[list[str]]) -> dict[str, Any] | None:
     normalized_rows = [[(cell or "").strip() for cell in row] for row in rows]
     subject_well = next((row[1].strip() for row in normalized_rows if len(row) > 1 and row[0] == "Subject Well"), file_name)

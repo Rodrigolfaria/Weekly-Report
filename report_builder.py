@@ -8,10 +8,13 @@ from pathlib import Path
 from typing import Any
 
 from report_assets import HTML_TEMPLATE
-from report_flat_time import load_activity_code_translations
+from report_flat_time import (
+    load_activity_code_translations,
+    looks_like_flat_time_csv,
+    parse_flat_time_matrix_rows,
+)
 from report_parsers import (
     SheetData,
-    build_cost_avoidance_rows,
     build_intervention_rows,
     load_workbook,
     rows_to_dicts,
@@ -44,10 +47,8 @@ def build_dashboard_payload(
             "categories": sorted_unique([row["category"] for row in intervention_rows]),
             "types": sorted_unique([row["type"] for row in intervention_rows]),
             "apps": sorted_unique([row["app"] for row in intervention_rows]),
-            "reps": sorted_unique([row["rtesRep"] for row in intervention_rows]),
         },
         "interventions": intervention_rows,
-        "costAvoidance": cost_avoidance_rows,
     }
     if flat_time_payload is not None:
         payload["flatTime"] = flat_time_payload
@@ -70,17 +71,14 @@ def build_report_html(spreadsheet_name: str, spreadsheet_bytes: bytes, flat_time
     sheet_map = {sheet.name: sheet for sheet in sheets}
 
     interventions_source = sheet_map.get("Intervention Log", SheetData("Intervention Log", [], [])).rows
-    cost_avoidance_source = sheet_map.get("RTES CA", SheetData("RTES CA", [], [])).rows
 
     intervention_rows = build_intervention_rows(interventions_source)
-    cost_avoidance_rows = build_cost_avoidance_rows(cost_avoidance_source)
-
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     payload = build_dashboard_payload(
         spreadsheet_name=spreadsheet_name,
         generated_at=generated_at,
         intervention_rows=intervention_rows,
-        cost_avoidance_rows=cost_avoidance_rows,
+        cost_avoidance_rows=[],
         flat_time_payload=flat_time_payload,
         activity_code_translations=load_activity_code_translations(),
     )
@@ -96,6 +94,27 @@ def build_report_html(spreadsheet_name: str, spreadsheet_bytes: bytes, flat_time
 def build_csv_sheet(csv_name: str, csv_bytes: bytes) -> SheetData:
     rows = list(csv.reader(csv_bytes.decode("utf-8-sig", errors="ignore").splitlines()))
     return rows_to_dicts(csv_name, rows)
+
+
+def build_flat_time_csv_report_html(csv_name: str, csv_bytes: bytes) -> str:
+    rows = list(csv.reader(csv_bytes.decode("utf-8-sig", errors="ignore").splitlines()))
+    datasets = parse_flat_time_matrix_rows(csv_name, rows)
+    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    payload = build_dashboard_payload(
+        spreadsheet_name=f"{csv_name} (Flat Time CSV only)",
+        generated_at=generated_at,
+        intervention_rows=[],
+        cost_avoidance_rows=[],
+        flat_time_payload={"datasets": datasets},
+        activity_code_translations=load_activity_code_translations(),
+    )
+
+    return build_html(
+        title=f"Interactive Report - {csv_name}",
+        source_file=f"{csv_name} (Flat Time CSV mode)",
+        generated_at=generated_at,
+        payload=payload,
+    )
 
 
 def build_intervention_csv_report_html(csv_name: str, csv_bytes: bytes, flat_time_payload: dict[str, Any] | None = None) -> str:
@@ -117,6 +136,13 @@ def build_intervention_csv_report_html(csv_name: str, csv_bytes: bytes, flat_tim
         generated_at=generated_at,
         payload=payload,
     )
+
+
+def build_csv_report_html(csv_name: str, csv_bytes: bytes, flat_time_payload: dict[str, Any] | None = None) -> str:
+    rows = list(csv.reader(csv_bytes.decode("utf-8-sig", errors="ignore").splitlines()))
+    if looks_like_flat_time_csv(rows):
+        return build_flat_time_csv_report_html(csv_name, csv_bytes)
+    return build_intervention_csv_report_html(csv_name, csv_bytes, flat_time_payload=flat_time_payload)
 
 
 def build_empty_report_html(flat_time_payload: dict[str, Any] | None = None) -> str:

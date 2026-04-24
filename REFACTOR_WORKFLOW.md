@@ -14,13 +14,15 @@ Reduce the size and change-risk of `generate_report.py` without breaking the pub
 - `/Users/rodrigofaria/Documents/VScode/Clinica/Work/generate_report.py`
   Compatibility facade and CLI entrypoint.
 - `/Users/rodrigofaria/Documents/VScode/Clinica/Work/report_assets.py`
-  Frontend HTML template, including CSS and embedded JavaScript.
+  Asset assembler for the final standalone HTML.
 - `/Users/rodrigofaria/Documents/VScode/Clinica/Work/report_parsers.py`
   Workbook/CSV parsing and shared normalization helpers.
 - `/Users/rodrigofaria/Documents/VScode/Clinica/Work/report_builder.py`
   Payload assembly and HTML report builders.
 - `/Users/rodrigofaria/Documents/VScode/Clinica/Work/report_flat_time.py`
   Flat-time-specific parsing, dataset loading, and activity-code translation loading.
+- `/Users/rodrigofaria/Documents/VScode/Clinica/Work/report_template_assets/`
+  Separated frontend sources for template, CSS, and JavaScript.
 
 ## Safe Workflow
 
@@ -45,9 +47,37 @@ Done in this refactor:
 Recommended next extractions, only if needed later:
 
 1. Move weekly-report-specific calculations into a dedicated metrics module.
-2. Split the frontend template into external static assets if deployment constraints allow it.
+2. Optionally serve frontend assets as external static files if deployment constraints allow it.
 
 These are optional and can be done incrementally.
+
+### Phase 3: Asset source extraction
+
+Done in this refactor:
+
+1. Move the HTML shell source into `/Users/rodrigofaria/Documents/VScode/Clinica/Work/report_template_assets/template.html`.
+2. Move the CSS source into `/Users/rodrigofaria/Documents/VScode/Clinica/Work/report_template_assets/report.css`.
+3. Move the JavaScript source into `/Users/rodrigofaria/Documents/VScode/Clinica/Work/report_template_assets/report.js`.
+4. Keep the final generated report standalone by assembling those sources back into one HTML string inside `/Users/rodrigofaria/Documents/VScode/Clinica/Work/report_assets.py`.
+
+This means the app still behaves like before, while the frontend source is much easier to maintain.
+
+### Phase 4: JavaScript domain split
+
+Done in this refactor:
+
+1. Replace the monolithic `report_template_assets/report.js` with ordered JS source fragments under `/Users/rodrigofaria/Documents/VScode/Clinica/Work/report_template_assets/js/`.
+2. Keep the final generated report standalone by concatenating those fragments in `/Users/rodrigofaria/Documents/VScode/Clinica/Work/report_assets.py`.
+
+Current JS split:
+
+- `00-state-and-ingest.js`
+- `10-shared-ui.js`
+- `20-weekly-report.js`
+- `30-flat-time-analysis.js`
+- `40-dashboard-bootstrap.js`
+
+This reduces single-file size and keeps future refactors localized.
 
 ## Rollback Strategy
 

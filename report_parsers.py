@@ -251,7 +251,6 @@ def build_intervention_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
             "rigAction": normalize_text(row.get("Rig Taken Action")),
             "rigComment": normalize_text(row.get("Rig Comment")),
             "rtocLeadName": normalize_text(row.get("RTOC lead name")),
-            "rtesRep": normalize_text(row.get("RTES Rep")),
             "costSavingHours": as_number(row.get("Cost Saving (hrs)")),
             "potentialAvoidanceHours": as_number(row.get("Potential Cost Avoidance (hrs)")),
             "rigSpreadRate": as_number(row.get("Rig Spread Rate ($/day)")),
@@ -274,7 +273,6 @@ def build_intervention_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
             record["justification"],
             record["rtocComments"],
             record["rigComment"],
-            record["rtesRep"],
         ]
         record["searchText"] = " ".join(value.lower() for value in search_fields if value)
         if any(
@@ -287,7 +285,6 @@ def build_intervention_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
                 record["type"],
                 record["app"],
                 record["description"],
-                record["rtesRep"],
             ]
         ):
             output.append(record)
@@ -318,6 +315,41 @@ def build_cost_avoidance_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]
         record["searchText"] = " ".join(value.lower() for value in search_fields if value)
         if any([record["startDate"], record["endDate"], record["rig"], record["well"]]):
             output.append(record)
+    return output
+
+
+def build_cost_avoidance_rows_from_interventions(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    for row in rows:
+        cost_saving_hours = float(row.get("costSavingHours", 0.0) or 0.0)
+        potential_avoidance_hours = float(row.get("potentialAvoidanceHours", 0.0) or 0.0)
+        cost_saving_value = float(row.get("costSavingValue", 0.0) or 0.0)
+        potential_avoidance_value = float(row.get("potentialAvoidanceValue", 0.0) or 0.0)
+        total_hours = cost_saving_hours + potential_avoidance_hours
+        total_value = cost_saving_value + potential_avoidance_value
+        if total_hours <= 0 and total_value <= 0:
+            continue
+
+        record = {
+            "startDate": row.get("date", ""),
+            "endDate": row.get("date", ""),
+            "rig": row.get("rigName", ""),
+            "well": row.get("wellName", ""),
+            "daysSaved": total_hours / 24 if total_hours else 0.0,
+            "costAvoidanceValue": total_value,
+            "costIncluded": "Intervention Log derived",
+            "caDisplay": row.get("justification", "") or row.get("description", "") or row.get("recommendation", ""),
+        }
+        search_fields = [
+            record["startDate"],
+            record["endDate"],
+            record["rig"],
+            record["well"],
+            record["costIncluded"],
+            record["caDisplay"],
+        ]
+        record["searchText"] = " ".join(value.lower() for value in search_fields if value)
+        output.append(record)
     return output
 
 
