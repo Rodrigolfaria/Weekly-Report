@@ -3,10 +3,12 @@ from __future__ import annotations
 import csv
 import html
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from app_config import get_weeklyreport_agent_name, has_weeklyreport_ai
 from report_assets import HTML_TEMPLATE
 from report_flat_time import (
     load_activity_code_translations,
@@ -20,6 +22,43 @@ from report_parsers import (
     rows_to_dicts,
     sorted_unique,
 )
+
+
+def normalize_sheet_name(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
+
+
+def resolve_intervention_sheet(sheets: list[SheetData]) -> SheetData:
+    if not sheets:
+        return SheetData("Intervention Log", [], [])
+
+    exact_names = {"intervention log", "bh corva rtes interventions log"}
+    required_headers = {
+        "Interventions Count",
+        "Date",
+        "Rig Name",
+        "Well Name",
+        "Intervention Category",
+    }
+
+    best_sheet: SheetData | None = None
+    best_score = -1
+    for sheet in sheets:
+        normalized_name = normalize_sheet_name(sheet.name)
+        header_set = set(sheet.headers)
+        score = 0
+        if normalized_name in exact_names:
+            score += 100
+        if "intervention" in normalized_name:
+            score += 30
+        if "log" in normalized_name:
+            score += 20
+        score += len(required_headers.intersection(header_set)) * 10
+        if score > best_score:
+            best_score = score
+            best_sheet = sheet
+
+    return best_sheet or SheetData("Intervention Log", [], [])
 
 def build_dashboard_payload(
     spreadsheet_name: str,
@@ -37,6 +76,8 @@ def build_dashboard_payload(
             "minDate": min(dates) if dates else "",
             "maxDate": max(dates) if dates else "",
             "monitoringStartDate": "2025-11-11",
+            "weeklyReportAgent": get_weeklyreport_agent_name(),
+            "weeklyReportAiAvailable": has_weeklyreport_ai(),
         },
         "filters": {
             "weeks": sorted_unique([row["week"] for row in intervention_rows]),
@@ -68,9 +109,8 @@ def build_html(title: str, source_file: str, generated_at: str, payload: dict[st
 
 def build_report_html(spreadsheet_name: str, spreadsheet_bytes: bytes, flat_time_payload: dict[str, Any] | None = None) -> str:
     sheets = load_workbook(spreadsheet_bytes)
-    sheet_map = {sheet.name: sheet for sheet in sheets}
-
-    interventions_source = sheet_map.get("Intervention Log", SheetData("Intervention Log", [], [])).rows
+    intervention_sheet = resolve_intervention_sheet(sheets)
+    interventions_source = intervention_sheet.rows
 
     intervention_rows = build_intervention_rows(interventions_source)
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

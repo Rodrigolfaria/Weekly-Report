@@ -29,6 +29,15 @@ class SheetData:
     rows: list[dict[str, str]]
 
 
+CANONICAL_INTERVENTION_CATEGORIES = {
+    "operational compliance": "Operational Compliance",
+    "optimization": "Optimization",
+    "stuck pipe": "Stuck pipe",
+    "well control": "Well control",
+    "reporting": "Reporting",
+}
+
+
 def excel_serial_to_datetime(value: str) -> datetime | None:
     try:
         serial = float(value)
@@ -67,6 +76,13 @@ def parse_datetime_value(value: str | None) -> datetime | None:
         except ValueError:
             continue
     return None
+
+
+def canonical_intervention_category(value: str | None) -> str:
+    text = normalize_text(value)
+    if not text:
+        return ""
+    return CANONICAL_INTERVENTION_CATEGORIES.get(text.lower(), text)
 
 
 def column_letters_to_index(cell_ref: str) -> int:
@@ -234,7 +250,7 @@ def build_intervention_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
             "holeSize": normalize_text(row.get("Hole Size")),
             "engDept": normalize_text(row.get("ENG. Dept")),
             "optDept": normalize_text(row.get("Opt. Dept")),
-            "category": normalize_text(row.get("Intervention Category")),
+            "category": canonical_intervention_category(row.get("Intervention Category")),
             "type": normalize_text(row.get("Intervention Type")),
             "eventIndex": normalize_text(row.get("Event Index")),
             "app": normalize_text(row.get("Corva App")),
@@ -275,17 +291,20 @@ def build_intervention_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
             record["rigComment"],
         ]
         record["searchText"] = " ".join(value.lower() for value in search_fields if value)
-        if any(
-            [
-                record["date"],
-                record["rigName"],
-                record["field"],
-                record["wellName"],
-                record["category"],
-                record["type"],
-                record["app"],
-                record["description"],
-            ]
+        if (
+            (record["rigName"] or record["wellName"])
+            and any(
+                [
+                    record["date"],
+                    record["rigName"],
+                    record["field"],
+                    record["wellName"],
+                    record["category"],
+                    record["type"],
+                    record["app"],
+                    record["description"],
+                ]
+            )
         ):
             output.append(record)
     return output

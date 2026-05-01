@@ -70,8 +70,8 @@
       const ropSummary = buildRigSummary(periodRows, isRopRow);
       const kpiSummary = buildRigSummary(periodRows, isKpiRow);
       const summarySeries = [
-        { key: "savedTime", label: "Saved Time", color: "#1264d6", format: (value) => formatNumber(value) },
-        { key: "lossTime", label: "Loss Time", color: "#c81e5a", format: (value) => formatNumber(value) },
+        { key: "savedTime", label: "Saved Time", color: "#1264d6", format: (value) => formatHours(value) },
+        { key: "lossTime", label: "Loss Time", color: "#c81e5a", format: (value) => formatHours(value) },
       ];
 
       renderSummaryBlock(ui.wiperSummaryTable, ui.wiperSummaryChart, wiperSummary, summarySeries);
@@ -181,7 +181,7 @@
     }
 
     function applyPreset(preset) {
-      const defaultRange = getDefaultLastTuesdayRange();
+      const defaultRange = getDefaultLastTuesdayRange(dashboardData.meta.maxDate);
       const referenceEndDate = ui.endDate.value || defaultRange.end;
       if (!referenceEndDate) return;
       const weeklyAllStartDate = dashboardData.meta.monitoringStartDate || dashboardData.meta.minDate || "";
@@ -242,8 +242,8 @@
         },
         {
           label: "Hours Impact",
-          value: formatNumber(costSavingHours + potentialAvoidanceHours),
-          meta: formatNumber(costSavingHours) + " saved + " + formatNumber(potentialAvoidanceHours) + " avoided",
+          value: formatHours(costSavingHours + potentialAvoidanceHours),
+          meta: formatHours(costSavingHours) + " saved + " + formatHours(potentialAvoidanceHours) + " avoided",
         },
         {
           label: "Financial Impact",
@@ -467,6 +467,27 @@
         ];
         renderFlatTime();
       });
+      if (ui.flatTimeAiScope) {
+        ui.flatTimeAiScope.addEventListener("change", () => {
+          renderFlatTimeAiPanel(flatTimeState.aiContext);
+        });
+      }
+      if (ui.flatTimeAiWork) {
+        ui.flatTimeAiWork.addEventListener("input", () => {
+          renderFlatTimeAiPanel(flatTimeState.aiContext);
+        });
+      }
+      if (ui.flatTimeAiGenerate) {
+        ui.flatTimeAiGenerate.addEventListener("click", requestFlatTimeAnalystReport);
+      }
+      if (ui.flatTimeAiMethod) {
+        ui.flatTimeAiMethod.addEventListener("change", () => {
+          setFlatTimeAiBusyState(false);
+        });
+      }
+      if (ui.flatTimeAiExport) {
+        ui.flatTimeAiExport.addEventListener("click", exportFlatTimeAiPdf);
+      }
     }
 
     function initialize() {
@@ -488,7 +509,7 @@
       if (dashboardData.meta.minDate) ui.weeklyReportEndDate.min = dashboardData.meta.minDate;
       if (dashboardData.meta.maxDate) ui.weeklyReportEndDate.max = dashboardData.meta.maxDate;
 
-      const defaultRange = getDefaultLastTuesdayRange();
+      const defaultRange = getDefaultLastTuesdayRange(dashboardData.meta.maxDate);
       ui.startDate.value = defaultRange.start;
       ui.endDate.value = defaultRange.end;
       ui.weeklyReportStartDate.value = defaultRange.start;

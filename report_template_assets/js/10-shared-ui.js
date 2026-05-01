@@ -287,6 +287,7 @@
     }
 
     function renderTable(target, headers, rows) {
+      if (!target) return;
       if (!rows.length) {
         target.innerHTML = '<div class="empty">No rows available for the selected filters.</div>';
         return;
@@ -303,6 +304,7 @@
     }
 
     function renderTableHtml(target, headers, rows) {
+      if (!target) return;
       if (!rows.length) {
         target.innerHTML = '<div class="empty">No rows available for the selected filters.</div>';
         return;
@@ -376,9 +378,10 @@
       const tone = isSlow ? "slow" : "fast";
       const arrow = isSlow ? "▲" : "▼";
       const label = isSlow ? "slower" : "faster";
+      const days = value / 24;
       return (
         '<span class="trend-indicator ' + tone + '">' +
-        '<span>' + escapeHtml(formatNumber(value)) + '</span>' +
+        '<span>' + escapeHtml(formatHours(value) + " hr (" + formatDays(days) + " d)") + '</span>' +
         '<span class="arrow">' + arrow + '</span>' +
         '<span>' + label + '</span>' +
         '</span>'
@@ -405,7 +408,7 @@
 
     function formatHoursWithDays(value) {
       const hours = Number(value || 0);
-      return formatNumber(hours) + " hr / " + formatNumber(hours / 24) + " d";
+      return formatHours(hours) + " hr / " + formatDays(hours / 24) + " d";
     }
 
     function formatDateHuman(dateString) {
@@ -441,13 +444,16 @@
       return year + "-" + month + "-" + day;
     }
 
-    function getDefaultLastTuesdayRange() {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const dayOfWeek = today.getDay();
+    function getDefaultLastTuesdayRange(referenceDate) {
+      const baseDate = referenceDate ? new Date(referenceDate + "T00:00:00") : new Date();
+      if (Number.isNaN(baseDate.getTime())) {
+        baseDate.setTime(Date.now());
+      }
+      baseDate.setHours(0, 0, 0, 0);
+      const dayOfWeek = baseDate.getDay();
       const diffToTuesday = (dayOfWeek - 2 + 7) % 7;
-      const end = new Date(today);
-      end.setDate(today.getDate() - diffToTuesday);
+      const end = new Date(baseDate);
+      end.setDate(baseDate.getDate() - diffToTuesday);
       const start = new Date(end);
       start.setDate(end.getDate() - 6);
       return {
