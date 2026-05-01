@@ -1,6 +1,7 @@
 .DS_Store
 __pycache__/
 *.pyc
+.env.local
 # Generated standalone reports and local smoke-test artifacts.
 report_output/
 ~$*.xlsx

@@ -76,8 +76,24 @@
       flatTimeRecalculate: document.getElementById("flat-time-recalculate"),
       flatTimeClearUploads: document.getElementById("flat-time-clear-uploads"),
       flatTimeDatasetTags: document.getElementById("flat-time-dataset-tags"),
+      flatTimeAiHeading: document.getElementById("flat-time-ai-heading"),
+      flatTimeAiNote: document.getElementById("flat-time-ai-note"),
+      flatTimeAiStatus: document.getElementById("flat-time-ai-status"),
+      flatTimeAiMethod: document.getElementById("flat-time-ai-method"),
+      flatTimeAiScope: document.getElementById("flat-time-ai-scope"),
+      flatTimeAiWork: document.getElementById("flat-time-ai-work"),
+      flatTimeAiGenerate: document.getElementById("flat-time-ai-generate"),
+      flatTimeAiExport: document.getElementById("flat-time-ai-export"),
+      flatTimeAiContext: document.getElementById("flat-time-ai-context"),
+      flatTimeAiSummary: document.getElementById("flat-time-ai-summary"),
+      flatTimeAiChart: document.getElementById("flat-time-ai-chart"),
+      flatTimeAiOutput: document.getElementById("flat-time-ai-output"),
       flatTimeSummary: document.getElementById("flat-time-summary"),
       flatTimeTableSummary: document.getElementById("flat-time-table-summary"),
+      flatTimeComparisonPhaseTimes: document.getElementById("flat-time-comparison-phase-times"),
+      flatTimeComparisonDrillingTime: document.getElementById("flat-time-comparison-drilling-time"),
+      flatTimeComparisonPhaseDetails: document.getElementById("flat-time-comparison-phase-details"),
+      flatTimeComparisonDepthDays: document.getElementById("flat-time-comparison-depth-days"),
       flatTimeAllWellsLayout: document.getElementById("flat-time-all-wells-layout"),
       flatTimeWellRanking: document.getElementById("flat-time-well-ranking"),
       flatTimeParetoChart: document.getElementById("flat-time-pareto-chart"),
@@ -119,6 +135,11 @@
       minimumFractionDigits: 0,
     });
 
+    const hoursFormatter = new Intl.NumberFormat("en-US", {
+      maximumFractionDigits: 2,
+      minimumFractionDigits: 2,
+    });
+
     const CATEGORY_ORDER = ["Stuck pipe", "Optimization", "Operational Compliance", "Well Control", "Reporting"];
     const THEME_STORAGE_KEY = "weekly-report-theme";
     const WEEKLY_MONITORED_OVERRIDES_KEY = "weekly-monitored-wells-overrides";
@@ -138,7 +159,11 @@
       focusWell: "",
       focusActivity: "",
       focusActivities: [],
+      activityPickerOpen: false,
       heatmapMode: "gap",
+      aiContext: null,
+      aiReportText: "",
+      aiBusy: false,
     };
 
     function getChartTheme() {
@@ -196,6 +221,14 @@
 
     function formatNumber(value) {
       return numberFormatter.format(Number(value || 0));
+    }
+
+    function formatHours(value) {
+      return hoursFormatter.format(Number(value || 0));
+    }
+
+    function formatDays(value) {
+      return hoursFormatter.format(Number(value || 0));
     }
 
     function getWeeklyMonitoredOverrides() {
@@ -516,7 +549,16 @@
       return match ? match[1] : "__no_section__";
     }
 
+    function resolveFlatTimeSectionToken(activityName, fallbackSectionSize) {
+      const fallback = String(fallbackSectionSize || "").trim();
+      if (fallback && fallback !== "__no_section__") return fallback;
+      const label = String(activityName || "").trim();
+      if (label.startsWith("EOW-")) return "EOW";
+      return extractFlatTimeSectionSize(label);
+    }
+
     function formatFlatTimeSectionSize(sectionSize) {
+      if (sectionSize === "EOW") return "EOW";
       return sectionSize === "__no_section__" ? "No section size" : sectionSize + '"';
     }
 
@@ -648,8 +690,8 @@
                 )
               : "";
             const codesSummary = summarizeFlatTimeActivityCodes(groupRow.activityLabels);
-            const meanHtml = groupRow.meanHours > 0 ? escapeHtml(formatNumber(groupRow.meanHours)) : '<span class="table-summary-missing">-</span>';
-            const actualHtml = groupRow.actualHours > 0 ? escapeHtml(formatNumber(groupRow.actualHours)) : '<span class="table-summary-missing">-</span>';
+            const meanHtml = groupRow.meanHours > 0 ? escapeHtml(formatHours(groupRow.meanHours)) : '<span class="table-summary-missing">-</span>';
+            const actualHtml = groupRow.actualHours > 0 ? escapeHtml(formatHours(groupRow.actualHours)) : '<span class="table-summary-missing">-</span>';
             return (
               '<tr>' +
               metaColumns +
@@ -679,6 +721,8 @@
 
     function compareFlatTimeSectionSizes(left, right) {
       if (left === right) return 0;
+      if (left === "EOW") return right === "__no_section__" ? -1 : 1;
+      if (right === "EOW") return left === "__no_section__" ? 1 : -1;
       if (left === "__no_section__") return 1;
       if (right === "__no_section__") return -1;
       return Number(left) - Number(right) || left.localeCompare(right);
@@ -689,7 +733,7 @@
         new Set(
           datasets.flatMap((dataset) =>
             dataset.groups.flatMap((group) =>
-              group.activities.map((activity) => activity.sectionSize || extractFlatTimeSectionSize(activity.activity))
+              group.activities.map((activity) => resolveFlatTimeSectionToken(activity.activity, activity.sectionSize))
             )
           )
         )
@@ -719,7 +763,7 @@
           const groups = dataset.groups
             .map((group) => {
               const activities = group.activities.filter(
-                (activity) => (activity.sectionSize || extractFlatTimeSectionSize(activity.activity)) === sectionSize
+                (activity) => resolveFlatTimeSectionToken(activity.activity, activity.sectionSize) === sectionSize
               );
               if (!activities.length) return null;
               return {
@@ -909,7 +953,7 @@
         return (
           '<g>' +
           '<line x1="' + x.toFixed(2) + '" y1="' + margin.top + '" x2="' + x.toFixed(2) + '" y2="' + (height - margin.bottom) + '" stroke="' + chartTheme.grid + '" stroke-dasharray="4 5"></line>' +
-          '<text x="' + x.toFixed(2) + '" y="' + (height - 12) + '" text-anchor="middle" font-size="11" fill="' + chartTheme.valueLabel + '">' + escapeHtml(formatNumber(value)) + "</text>" +
+          '<text x="' + x.toFixed(2) + '" y="' + (height - 12) + '" text-anchor="middle" font-size="11" fill="' + chartTheme.valueLabel + '">' + escapeHtml(formatDays(value)) + "</text>" +
           "</g>"
         );
       }).join("");
@@ -940,7 +984,7 @@
             '<g>' +
             '<path d="' + path + '" fill="none" stroke="' + line.color + '" stroke-width="' + (line.isIdeal ? "4.5" : "2.5") + '" stroke-linecap="round" stroke-linejoin="round" opacity="' + (line.isIdeal ? "1" : "0.9") + '"></path>' +
             pointsSvg +
-            '<text x="' + labelX.toFixed(2) + '" y="' + (endPoint.y + (line.isIdeal ? -10 : 10)).toFixed(2) + '" font-size="11" font-weight="700" fill="' + chartTheme.pointLabel + '">' + escapeHtml(line.label + " • " + formatNumber(endPoint.cumulativeDays) + " d") + '</text>' +
+            '<text x="' + labelX.toFixed(2) + '" y="' + (endPoint.y + (line.isIdeal ? -10 : 10)).toFixed(2) + '" font-size="11" font-weight="700" fill="' + chartTheme.pointLabel + '">' + escapeHtml(line.label + " • " + formatDays(endPoint.cumulativeDays) + " d") + '</text>' +
             '</g>'
           );
         })

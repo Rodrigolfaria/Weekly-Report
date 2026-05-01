@@ -125,25 +125,25 @@
       const cards = [
         {
           label: "Total This Week",
-          value: formatNumber(actualWeek.reduce((sum, row) => sum + row.hours, 0)),
+          value: formatHours(actualWeek.reduce((sum, row) => sum + row.hours, 0)),
           suffix: "hours saved",
           meta: formatCurrency(actualWeek.reduce((sum, row) => sum + row.value, 0)) + " value realized",
         },
         {
           label: "Total YTD",
-          value: formatNumber(actualYtd.reduce((sum, row) => sum + row.hours, 0)),
+          value: formatHours(actualYtd.reduce((sum, row) => sum + row.hours, 0)),
           suffix: "hours saved",
           meta: formatCurrency(actualYtd.reduce((sum, row) => sum + row.value, 0)) + " value realized",
         },
         {
           label: "Potential This Week",
-          value: formatNumber(potentialWeek.reduce((sum, row) => sum + row.hours, 0)),
+          value: formatHours(potentialWeek.reduce((sum, row) => sum + row.hours, 0)),
           suffix: "hours potential",
           meta: formatCurrency(potentialWeek.reduce((sum, row) => sum + row.value, 0)) + " value potential",
         },
         {
           label: "Potential YTD",
-          value: formatNumber(potentialYtd.reduce((sum, row) => sum + row.hours, 0)),
+          value: formatHours(potentialYtd.reduce((sum, row) => sum + row.hours, 0)),
           suffix: "hours potential",
           meta: formatCurrency(potentialYtd.reduce((sum, row) => sum + row.value, 0)) + " value potential",
         },
@@ -206,7 +206,7 @@
             "<td>" + escapeHtml(row.well) + "</td>" +
             "<td>" + escapeHtml(row.provider) + "</td>" +
             "<td>" + escapeHtml(row.action) + "</td>" +
-            "<td>" + escapeHtml(formatNumber(row.hours)) + "</td>" +
+            "<td>" + escapeHtml(formatHours(row.hours)) + "</td>" +
             "<td>" + escapeHtml(formatCurrency(row.value)) + "</td>" +
             "</tr>"
           );
@@ -221,12 +221,12 @@
       const totalsRows =
         '<tr>' +
         '<td colspan="4" style="text-align:right; font-weight:700;">Total This Week</td>' +
-        '<td><strong>' + escapeHtml(formatNumber(totalWeekHours)) + "</strong></td>" +
+        '<td><strong>' + escapeHtml(formatHours(totalWeekHours)) + "</strong></td>" +
         '<td><strong>' + escapeHtml(formatCurrency(totalWeekValue)) + "</strong></td>" +
         "</tr>" +
         '<tr>' +
         '<td colspan="4" style="text-align:right; font-weight:700;">Total YTD</td>' +
-        '<td><strong>' + escapeHtml(formatNumber(totalYtdHours)) + "</strong></td>" +
+        '<td><strong>' + escapeHtml(formatHours(totalYtdHours)) + "</strong></td>" +
         '<td><strong>' + escapeHtml(formatCurrency(totalYtdValue)) + "</strong></td>" +
         "</tr>";
 
@@ -246,8 +246,8 @@
           item.well,
           String(item.interventions),
           String(item.rigAction),
-          formatNumber(item.savedTime),
-          formatNumber(item.lossTime),
+          formatHours(item.savedTime),
+          formatHours(item.lossTime),
         ])
         .concat([
           [
@@ -255,8 +255,8 @@
             "",
             String(summary.totals.interventions),
             String(summary.totals.rigAction),
-            formatNumber(summary.totals.savedTime),
-            formatNumber(summary.totals.lossTime),
+            formatHours(summary.totals.savedTime),
+            formatHours(summary.totals.lossTime),
           ],
         ]);
 

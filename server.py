@@ -8,6 +8,7 @@ import hmac
 import json
 import ipaddress
 import os
+from app_config import load_local_env
 from email.parser import BytesParser
 from email.policy import default
 from http import HTTPStatus
@@ -19,9 +20,14 @@ from generate_report import (
     build_empty_report_html,
     build_report_html,
 )
+from report_ai import generate_flat_time_ai_report
+
+
+load_local_env()
 
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+MAX_AI_REQUEST_BYTES = 1 * 1024 * 1024
 BASIC_AUTH_USER = os.getenv("BASIC_AUTH_USER", "")
 BASIC_AUTH_PASSWORD = os.getenv("BASIC_AUTH_PASSWORD", "")
 ALLOWED_IPS = [item.strip() for item in os.getenv("ALLOWED_IPS", "").split(",") if item.strip()]
@@ -561,7 +567,7 @@ class ReportHandler(BaseHTTPRequestHandler):
             self._send_auth_challenge()
             return
 
-        if parsed.path != "/upload":
+        if parsed.path not in {"/upload", "/ai/flat-time-report"}:
             self._send_text(HTTPStatus.NOT_FOUND, "<h1>404</h1><p>Page not found.</p>")
             return
 
@@ -569,6 +575,10 @@ class ReportHandler(BaseHTTPRequestHandler):
             content_length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
             content_length = 0
+
+        if parsed.path == "/ai/flat-time-report":
+            self._handle_flat_time_ai_request(content_length)
+            return
 
         if content_length <= 0:
             self._send_text(HTTPStatus.BAD_REQUEST, render_message_page("Upload failed", "No file was sent.", "Error"))
@@ -620,6 +630,39 @@ class ReportHandler(BaseHTTPRequestHandler):
             return
 
         self._send_text(HTTPStatus.OK, html_report)
+
+    def _handle_flat_time_ai_request(self, content_length: int) -> None:
+        if content_length <= 0:
+            self._send_json({"ok": False, "error": "No AI request body was sent."}, HTTPStatus.BAD_REQUEST)
+            return
+
+        if content_length > MAX_AI_REQUEST_BYTES:
+            self._send_json({"ok": False, "error": "The AI request payload is too large."}, HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+            return
+
+        try:
+            body = self.rfile.read(content_length)
+            payload = json.loads(body.decode("utf-8"))
+        except Exception:  # noqa: BLE001
+            self._send_json({"ok": False, "error": "Could not read the AI request payload."}, HTTPStatus.BAD_REQUEST)
+            return
+
+        context = payload.get("context")
+        scope = str(payload.get("scope") or "selected-well")
+        specific_work = str(payload.get("specificWork") or "")
+
+        if not isinstance(context, dict) or not context:
+            self._send_json({"ok": False, "error": "Flat Time context is required before generating the AI report."}, HTTPStatus.BAD_REQUEST)
+            return
+
+        try:
+            result = generate_flat_time_ai_report(context=context, scope=scope, specific_work=specific_work)
+        except RuntimeError as exc:
+            status = HTTPStatus.SERVICE_UNAVAILABLE if "not configured" in str(exc).lower() else HTTPStatus.BAD_GATEWAY
+            self._send_json({"ok": False, "error": str(exc)}, status)
+            return
+
+        self._send_json({"ok": True, **result})
 
 
 def parse_args() -> argparse.Namespace:

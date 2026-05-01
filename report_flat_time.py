@@ -29,6 +29,8 @@ def looks_like_flat_time_csv(rows: list[list[str]]) -> bool:
         labels = [str(cell or "").strip().lower() for cell in row[1:]]
         if any(label.startswith("mean") for label in labels) and any(label.startswith("median") for label in labels):
             return True
+        if any(label for label in labels):
+            return True
     return False
 
 
@@ -218,9 +220,12 @@ def load_flat_time_directory(directory: Path) -> dict[str, Any]:
                 rows = list(csv.reader(handle))
         except OSError:
             continue
-        parsed = parse_flat_time_rows(path.name, rows)
-        if parsed:
-            datasets.append(parsed)
+        if looks_like_flat_time_csv(rows):
+            datasets.extend(parse_flat_time_matrix_rows(path.name, rows))
+        else:
+            parsed = parse_flat_time_rows(path.name, rows)
+            if parsed:
+                datasets.append(parsed)
     return {"datasets": datasets}
 
 

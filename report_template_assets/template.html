@@ -500,7 +500,8 @@ __REPORT_CSS__
                 <label for="flat-time-mode">Analysis Mode</label>
                 <select id="flat-time-mode">
                   <option value="executive" selected>Executive</option>
-                  <option value="engineering">Engineering</option>
+                  <option value="engineering">Explorer Mode</option>
+                  <option value="comparison">Comparison</option>
                   <option value="table-summary">Table Summary</option>
                 </select>
               </div>
@@ -524,8 +525,33 @@ __REPORT_CSS__
           <div id="flat-time-dataset-tags" class="tag-list"></div>
         </section>
 
-        <section class="panel section" data-flat-mode="executive engineering">
-          <div id="flat-time-summary" class="metric-strip"></div>
+        <section class="panel section">
+          <div class="report-card">
+            <div class="card-toolbar">
+              <div>
+                <h3 id="flat-time-ai-heading">Report Analysis</h3>
+                <p class="report-note" id="flat-time-ai-note" hidden></p>
+              </div>
+              <span id="flat-time-ai-status" class="chip">Standard report</span>
+            </div>
+            <div class="flat-time-ai-toolbar">
+              <div class="field compact-field" style="min-width: 220px;">
+                <label for="flat-time-ai-scope">Report Scope</label>
+                <select id="flat-time-ai-scope">
+                  <option value="selected-well" selected>Selected well</option>
+                  <option value="selected-well-section">Selected well + section</option>
+                  <option value="selected-activities">Selected activities</option>
+                  <option value="current-scope">Current filtered comparison set</option>
+                </select>
+              </div>
+              <div class="flat-time-ai-actions">
+                <button id="flat-time-ai-generate" class="action-btn" type="button">Generate Report</button>
+              </div>
+            </div>
+            <div id="flat-time-ai-context" class="chips" style="margin-top: 14px;"></div>
+            <div id="flat-time-ai-summary" class="metric-strip" style="margin-top: 16px;"></div>
+            <div id="flat-time-ai-output" class="ai-report-output empty">Load Flat Time CSV files to generate a report for the selected job or benchmark scope.</div>
+          </div>
         </section>
 
         <section class="panel section" data-flat-mode="table-summary">
@@ -536,36 +562,42 @@ __REPORT_CSS__
           </div>
         </section>
 
-        <section class="panel section" data-flat-mode="executive engineering">
-          <div class="flat-time-chart-stack">
+        <section class="panel section" data-flat-mode="comparison">
+          <div class="report-grid-2">
             <div class="report-card">
-              <h3>Well Ranking by Excess Time</h3>
-              <p class="report-note">Ranks wells by time above the recommended ideal, highlighting the main activity and group driving the excess.</p>
-              <div id="flat-time-well-ranking"></div>
+              <h3>Flat Times</h3>
+              <p class="report-note">Compares total time by phase across the loaded wells. Actions with code <strong>D</strong>, <strong>DMR</strong>, and <strong>DMS</strong> are excluded from this view.</p>
+              <div id="flat-time-comparison-phase-times"></div>
             </div>
             <div class="report-card">
-              <h3>Pareto of Recoverable Hours</h3>
-              <p class="report-note">Shows which activities concentrate the largest recoverable hours so improvement effort can be focused where it matters most.</p>
-              <div id="flat-time-pareto-chart"></div>
+              <h3>Drilling Time</h3>
+              <p class="report-note">Shows only the drilling actions <strong>D</strong>, <strong>DMR</strong>, and <strong>DMS</strong> by phase. Drilling footage will be added automatically when the source file includes depth or footage fields.</p>
+              <div id="flat-time-comparison-drilling-time"></div>
             </div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="comparison">
+          <div class="report-card">
+            <h3>Flat Time Comparison Details</h3>
+            <p class="report-note">For each phase, compare Major OP and Action across the loaded wells, then review the top 10 time-consuming activities in that phase.</p>
+            <div id="flat-time-comparison-phase-details"></div>
+          </div>
+        </section>
+
+        <section class="panel section" data-flat-mode="comparison">
+          <div class="report-card">
+            <h3>Depth vs Days Progression</h3>
+            <p class="report-note">Shows cumulative days from the initial to the final operation. When true depth is not available in the flat time export, the Y axis uses ordered phase progression as a depth proxy.</p>
+            <div id="flat-time-comparison-depth-days"></div>
           </div>
         </section>
 
         <section class="panel section" data-flat-mode="executive">
           <div class="report-card">
-            <h3>All Wells Summary by Section</h3>
-            <div class="card-toolbar">
-              <p class="report-note">Breaks every loaded well into hole sections and shows the three most time-consuming activities inside each section. Use the layout selector to compare different executive presentations without changing the data.</p>
-              <div class="field compact-field">
-                <label for="flat-time-all-wells-layout">Summary Layout</label>
-                <select id="flat-time-all-wells-layout">
-                  <option value="ranked">Current ranked table</option>
-                  <option value="grouped" selected>Grouped by well</option>
-                  <option value="matrix">Matrix + grouped</option>
-                </select>
-              </div>
-            </div>
-            <div id="flat-time-all-wells-sections"></div>
+            <h3>Well Ranking by Excess Time</h3>
+            <p class="report-note">Ranks wells by time above the recommended ideal, highlighting the main activity and group driving the excess.</p>
+            <div id="flat-time-well-ranking"></div>
           </div>
         </section>
 
@@ -573,7 +605,7 @@ __REPORT_CSS__
           <div class="flat-time-chart-stack">
             <div class="report-card">
               <h3>Selected Well by Section</h3>
-              <p class="report-note">Section-by-section comparison for the selected well, highlighting actual time, ideal target and recoverable gap with the top section drivers.</p>
+              <p class="report-note">Section-by-section comparison for the selected well, highlighting actual time, ideal target and recoverable gap with the top reduction opportunities inside each section.</p>
               <div id="flat-time-selected-well-sections"></div>
             </div>
             <div class="report-card">
@@ -592,22 +624,7 @@ __REPORT_CSS__
           </div>
         </section>
 
-        <section class="panel section" data-flat-mode="executive">
-          <div class="flat-time-chart-stack">
-            <div class="report-card">
-              <h3>Summary of Where Time Can Be Saved</h3>
-              <p class="report-note">Executive summary of recoverable hours and days by section, with the most credible recurring activity to attack next.</p>
-              <div id="flat-time-savings-summary"></div>
-            </div>
-            <div class="report-card">
-              <h3>Executive Explanation</h3>
-              <p class="report-note">Narrative explanation of why the system selected the current opportunities and how the time can be recovered.</p>
-              <div id="flat-time-narrative"></div>
-            </div>
-          </div>
-        </section>
-
-        <section class="panel section" data-flat-mode="engineering">
+        <section class="panel section" data-flat-mode="engineering-hidden">
           <div class="flat-time-chart-stack">
             <div class="report-card">
               <h3>Well vs Ideal Waterfall</h3>
@@ -627,7 +644,7 @@ __REPORT_CSS__
           </div>
         </section>
 
-        <section class="panel section" data-flat-mode="engineering">
+        <section class="panel section" data-flat-mode="engineering-hidden">
           <div class="flat-time-chart-stack">
             <div class="report-card">
               <h3>Rig Benchmark Summary</h3>
@@ -642,7 +659,7 @@ __REPORT_CSS__
           </div>
         </section>
 
-        <section class="panel section" data-flat-mode="engineering">
+        <section class="panel section" data-flat-mode="engineering-hidden">
           <div class="flat-time-chart-stack">
             <div class="report-card">
               <h3>Group Comparison</h3>
@@ -658,10 +675,10 @@ __REPORT_CSS__
           </div>
         </section>
 
-        <section class="panel section" data-flat-mode="engineering">
+        <section class="panel section" data-flat-mode="engineering-hidden">
           <div class="report-card">
             <h3>Activity Benchmark Table</h3>
-            <p class="report-note">Engineering view of each activity, including sample size, distribution, recommended ideal time, variability and recoverable hours.</p>
+            <p class="report-note">Detailed activity view including sample size, distribution, recommended ideal time, variability and recoverable hours.</p>
             <div id="flat-time-benchmark-table"></div>
           </div>
         </section>
@@ -669,7 +686,7 @@ __REPORT_CSS__
         <section class="panel section" data-flat-mode="engineering">
           <div class="report-card">
             <h3>Drill-down Explorer</h3>
-            <p class="report-note" id="flat-time-drilldown-note">Click a well or activity in the tables above to open the benchmark, peer comparison and ideal-time logic.</p>
+            <p class="report-note" id="flat-time-drilldown-note">Use the selectors below to inspect a well, section, or activity benchmark and review the ideal-time logic.</p>
             <div class="drill-grid">
               <div>
                 <h3 style="font-size:16px; margin-bottom:10px;">Selected Well Breakdown</h3>
@@ -683,7 +700,7 @@ __REPORT_CSS__
           </div>
         </section>
 
-        <section class="panel section" data-flat-mode="engineering">
+        <section class="panel section" data-flat-mode="engineering-hidden">
           <div class="flat-time-chart-stack">
             <div class="report-card">
               <h3>Reduction Opportunity Matrix</h3>
@@ -698,7 +715,7 @@ __REPORT_CSS__
           </div>
         </section>
 
-        <section class="panel section" data-flat-mode="engineering">
+        <section class="panel section" data-flat-mode="engineering-hidden">
           <div class="report-grid-2">
             <div class="report-card">
               <h3>Top Loss Drivers by Well</h3>
@@ -713,7 +730,7 @@ __REPORT_CSS__
           </div>
         </section>
 
-        <section class="panel section" data-flat-mode="engineering">
+        <section class="panel section" data-flat-mode="engineering-hidden">
           <div class="report-card">
             <h3>Activity Heatmap</h3>
             <p class="report-note" id="flat-time-heatmap-note">Heatmap of hours above ideal by well and activity, making repeated loss patterns visible at a glance.</p>
@@ -728,7 +745,7 @@ __REPORT_CSS__
           </div>
         </section>
 
-        <section class="panel section" data-flat-mode="engineering">
+        <section class="panel section" data-flat-mode="engineering-hidden">
           <div class="report-card">
             <h3>Perfect Flat Time vs Wells</h3>
             <p class="report-note">Compares the ideal cumulative flat time curve against the actual wells. Days are cumulative on X and depth progression is represented by section sequence on Y.</p>

@@ -26,7 +26,7 @@
               activityMap.set(key, {
                 label: key,
                 groupLabel: group.groupName,
-                sectionSize: activity.sectionSize || extractFlatTimeSectionSize(activity.activity),
+                sectionSize: resolveFlatTimeSectionToken(activity.activity, activity.sectionSize),
               });
             }
             activityMap.get(key)[dataset.id] = Number(activity[metricKey] || 0);
@@ -77,7 +77,7 @@
       return "High";
     }
 
-    function normalizeFlatTimeFocusActivities(opportunities, fallbackActivity) {
+    function normalizeFlatTimeFocusActivities(opportunities, fallbackActivity, options = {}) {
       const validActivities = new Set(opportunities.map((opportunity) => opportunity.activityLabel));
       const currentValues = Array.isArray(flatTimeState.focusActivities) && flatTimeState.focusActivities.length
         ? flatTimeState.focusActivities
@@ -92,7 +92,7 @@
             .filter((value) => validActivities.has(value))
         )
       );
-      if (!sanitized.length && fallbackActivity && validActivities.has(fallbackActivity)) {
+      if (!sanitized.length && !options.allowEmpty && fallbackActivity && validActivities.has(fallbackActivity)) {
         sanitized.push(fallbackActivity);
       }
       flatTimeState.focusActivities = sanitized;
@@ -174,9 +174,67 @@
         ranked,
         summaryText:
           occurrenceCount >= 2
-            ? selectedItems.length + " activities across " + occurrenceCount + " wells; peers avg " + formatNumber(peerAverage || meanValue || 0) + " hr, top well " + topEntry.label + " ran " + formatNumber(topEntry.value) + " hr"
+            ? selectedItems.length + " activities across " + occurrenceCount + " wells; peers avg " + formatHours(peerAverage || meanValue || 0) + " hr, top well " + topEntry.label + " ran " + formatHours(topEntry.value) + " hr"
             : "Only one well observed for the selected activity set",
       };
+    }
+
+    function groupFlatTimeActivitiesForPicker(opportunities, selectedLabels) {
+      const selectedSet = new Set(selectedLabels || []);
+      const grouped = new Map();
+
+      opportunities
+        .slice()
+        .sort((left, right) =>
+          compareFlatTimeGroups(left.groupLabel, right.groupLabel) ||
+          left.activityLabel.localeCompare(right.activityLabel)
+        )
+        .forEach((opportunity) => {
+          const key = opportunity.groupLabel || "UNGROUPED";
+          if (!grouped.has(key)) {
+            grouped.set(key, {
+              groupKey: key,
+              groupDisplay: flatTimeGroupDisplayLabel(key),
+              activities: [],
+            });
+          }
+          grouped.get(key).activities.push({
+            label: opportunity.activityLabel,
+            checked: selectedSet.has(opportunity.activityLabel),
+          });
+        });
+
+      return Array.from(grouped.values());
+    }
+
+    function flatTimeDatasetHasSection(dataset, sectionSize) {
+      if (!dataset) return false;
+      if (!sectionSize) return true;
+      return (dataset.groups || []).some((group) =>
+        (group.activities || []).some((activity) => {
+          const activitySection = resolveFlatTimeSectionToken(activity.activity, activity.sectionSize);
+          return activitySection === sectionSize;
+        })
+      );
+    }
+
+    function getFlatTimeSectionSizesForDataset(dataset) {
+      if (!dataset) return [];
+      return Array.from(
+        new Set(
+          (dataset.groups || []).flatMap((group) =>
+            (group.activities || []).map((activity) => resolveFlatTimeSectionToken(activity.activity, activity.sectionSize))
+          )
+        )
+      ).sort(compareFlatTimeSectionSizes);
+    }
+
+    function isFlatTimeOnlyOpportunity(opportunity) {
+      if (!opportunity) return false;
+      const sectionSize = String(resolveFlatTimeSectionToken(opportunity.activityLabel, opportunity.sectionSize) || "").trim();
+      if (!sectionSize || sectionSize === "__no_section__") return false;
+      const parts = extractFlatTimeComparisonParts(opportunity.activityLabel, opportunity.groupLabel);
+      return !isFlatTimeDrillingAction(parts.action);
     }
 
     function computeFlatTimeOpportunity(item, datasets) {
@@ -257,7 +315,7 @@
         ranked,
         summaryText:
           occurrenceCount >= 2
-            ? occurrenceCount + " wells; peers avg " + formatNumber(peerAverage || meanValue || 0) + " hr, top well " + topEntry.label + " ran " + formatNumber(topEntry.value) + " hr"
+            ? occurrenceCount + " wells; peers avg " + formatHours(peerAverage || meanValue || 0) + " hr, top well " + topEntry.label + " ran " + formatHours(topEntry.value) + " hr"
             : "Only one well observed for this activity",
       };
     }
@@ -307,6 +365,28 @@
         .sort((left, right) => right.excessTotal - left.excessTotal || right.actualTotal - left.actualTotal || left.wellLabel.localeCompare(right.wellLabel));
     }
 
+    function buildSelectedWellParetoItems(selectedDataset, opportunities) {
+      if (!selectedDataset) return [];
+
+      return opportunities
+        .map((opportunity) => {
+          const actual = Number(opportunity.ranked.find((entry) => entry.datasetId === selectedDataset.id)?.value || 0);
+          const recoverableHours = Math.max(actual - Number(opportunity.idealTime || 0), 0);
+          return {
+            ...opportunity,
+            selectedWellActualHours: actual,
+            selectedWellRecoverableHours: recoverableHours,
+          };
+        })
+        .filter((opportunity) => opportunity.selectedWellActualHours > 0 && opportunity.selectedWellRecoverableHours > 0)
+        .sort(
+          (left, right) =>
+            right.selectedWellRecoverableHours - left.selectedWellRecoverableHours ||
+            right.selectedWellActualHours - left.selectedWellActualHours ||
+            left.activityLabel.localeCompare(right.activityLabel)
+        );
+    }
+
     function buildSectionBenchmarkItems(datasets, metricKey, opportunities) {
       const sectionMap = new Map();
       const opportunityMap = new Map(
@@ -317,7 +397,7 @@
         const totalsBySection = new Map();
         dataset.groups.forEach((group) => {
           group.activities.forEach((activity) => {
-            const sectionSize = activity.sectionSize || extractFlatTimeSectionSize(activity.activity);
+            const sectionSize = resolveFlatTimeSectionToken(activity.activity, activity.sectionSize);
             if (!sectionSize || sectionSize === "__no_section__") return;
             const actual = Number(activity[metricKey] || 0);
             if (actual <= 0) return;
@@ -438,12 +518,13 @@
         const sectionMap = new Map();
         dataset.groups.forEach((group) => {
           group.activities.forEach((activity) => {
-            const sectionSize = activity.sectionSize || extractFlatTimeSectionSize(activity.activity);
+            const sectionSize = resolveFlatTimeSectionToken(activity.activity, activity.sectionSize);
             if (!sectionSize || sectionSize === "__no_section__") return;
             const actual = Number(activity[metricKey] || 0);
             if (actual <= 0) return;
 
             const opportunity = opportunityMap.get(activity.activity);
+            if (!opportunity) return;
             const ideal = Number(opportunity?.idealTime || 0);
             const gap = Math.max(actual - ideal, 0);
 
@@ -564,7 +645,7 @@
         .map((activity) => (
           '<span class="section-driver-chip">' +
           flatTimeActivityLabelHtml(activity.activityLabel) +
-          '<span class="section-driver-chip-value">' + escapeHtml(formatNumber(Number(activity[valueKey] || 0)) + " hr") + "</span>" +
+          '<span class="section-driver-chip-value">' + escapeHtml(formatHours(Number(activity[valueKey] || 0)) + " hr") + "</span>" +
           "</span>"
         ))
         .join("");
@@ -587,9 +668,9 @@
             '<span>' + escapeHtml(group.rigLabel) + '</span>' +
             "</div>" +
             '<div class="well-section-accordion-metrics">' +
-            '<span>' + escapeHtml(formatNumber(group.actualTotal)) + ' hr actual</span>' +
-            '<span>' + escapeHtml(formatNumber(group.idealTotal)) + ' hr ideal</span>' +
-            '<span>' + escapeHtml(formatNumber(group.gapTotal)) + ' hr gap</span>' +
+            '<span>' + escapeHtml(formatHours(group.actualTotal)) + ' hr actual</span>' +
+            '<span>' + escapeHtml(formatHours(group.idealTotal)) + ' hr ideal</span>' +
+            '<span>' + escapeHtml(formatHours(group.gapTotal)) + ' hr gap</span>' +
             "</div>" +
             '<span class="check-dropdown-caret">▼</span>' +
             "</summary>" +
@@ -600,9 +681,9 @@
               .map((section) => (
                 "<tr>" +
                 "<td>" + escapeHtml(section.label) + "</td>" +
-                "<td>" + escapeHtml(formatNumber(section.actualTotal)) + "</td>" +
-                "<td>" + escapeHtml(formatNumber(section.idealTotal)) + "</td>" +
-                "<td>" + escapeHtml(formatNumber(section.gapTotal)) + "</td>" +
+                "<td>" + escapeHtml(formatHours(section.actualTotal)) + "</td>" +
+                "<td>" + escapeHtml(formatHours(section.idealTotal)) + "</td>" +
+                "<td>" + escapeHtml(formatHours(section.gapTotal)) + "</td>" +
                 '<td><div class="section-driver-chip-list">' + renderSectionDriverChips(section.topActivities, "actual") + "</div></td>" +
                 "</tr>"
               ))
@@ -651,9 +732,9 @@
               return (
                 '<td>' +
                 '<div class="section-matrix-cell" style="background:' + bg + "; color:" + fg + ';">' +
-                "<strong>" + escapeHtml(formatNumber(section.actualTotal)) + "</strong>" +
+                "<strong>" + escapeHtml(formatHours(section.actualTotal)) + "</strong>" +
                 '<span>actual</span>' +
-                "<small>+" + escapeHtml(formatNumber(section.gapTotal)) + " hr gap</small>" +
+                "<small>+" + escapeHtml(formatHours(section.gapTotal)) + " hr gap</small>" +
                 "</div>" +
                 "</td>"
               );
@@ -680,6 +761,7 @@
     }
 
     function renderAllWellsSectionSummary(target, allWellSectionRows, datasets, breakdownMap, selectedWell) {
+      if (!target) return;
       const layout = ui.flatTimeAllWellsLayout ? ui.flatTimeAllWellsLayout.value || "ranked" : "ranked";
       const wellSectionGroups = buildWellSectionGroups(datasets, breakdownMap, selectedWell);
 
@@ -700,10 +782,10 @@
           escapeHtml(row.rigLabel),
           flatTimeActionButtonHtml("well", row.wellLabel, row.wellLabel),
           escapeHtml(row.sectionLabel),
-          escapeHtml(formatNumber(row.actualTotal)),
-          escapeHtml(formatNumber(row.idealTotal)),
-          escapeHtml(formatNumber(row.gapTotal)),
-          row.topActivities.map((activity) => flatTimeActivityLabelHtml(activity.activityLabel) + escapeHtml(" (" + formatNumber(activity.actual) + " hr)")).join("<br>"),
+          escapeHtml(formatHours(row.actualTotal)),
+          escapeHtml(formatHours(row.idealTotal)),
+          escapeHtml(formatHours(row.gapTotal)),
+          row.topActivities.map((activity) => flatTimeActivityLabelHtml(activity.activityLabel) + escapeHtml(" (" + formatHours(activity.actual) + " hr)")).join("<br>"),
         ])
       );
     }
@@ -742,6 +824,627 @@
           gapVsOffsetAverage: offsetAverage > 0 ? section.actualTotal - offsetAverage : 0,
         };
       });
+    }
+
+    const FLAT_TIME_DRILLING_ACTION_CODES = new Set(["D", "DMR", "DMS"]);
+
+    function extractFlatTimeComparisonParts(activityLabel, fallbackGroupLabel) {
+      const parts = String(activityLabel || "").split("-").filter(Boolean);
+      return {
+        phase: parts[0] || "__unknown__",
+        majorOp: parts[1] || fallbackGroupLabel || "Unknown",
+        action: parts.length ? parts[parts.length - 1] : "Unknown",
+      };
+    }
+
+    function isFlatTimeDrillingAction(actionCode) {
+      return FLAT_TIME_DRILLING_ACTION_CODES.has(String(actionCode || "").trim().toUpperCase());
+    }
+
+    function formatFlatTimeComparisonPhaseLabel(phase) {
+      const token = String(phase || "").trim();
+      if (!token) return "Unknown phase";
+      if (token === "PRE" || token === "EOW") return token;
+      if (/^\d+(?:\.\d+)?$/.test(token)) return formatFlatTimeSectionSize(token);
+      return token;
+    }
+
+    function compareFlatTimePhases(left, right) {
+      const leftToken = String(left || "").trim();
+      const rightToken = String(right || "").trim();
+      if (leftToken === rightToken) return 0;
+      if (leftToken === "PRE") return -1;
+      if (rightToken === "PRE") return 1;
+      if (leftToken === "EOW") return 1;
+      if (rightToken === "EOW") return -1;
+
+      const leftIsNumeric = /^\d+(?:\.\d+)?$/.test(leftToken);
+      const rightIsNumeric = /^\d+(?:\.\d+)?$/.test(rightToken);
+      if (leftIsNumeric && rightIsNumeric) {
+        return Number(rightToken) - Number(leftToken) || leftToken.localeCompare(rightToken);
+      }
+      if (leftIsNumeric) return -1;
+      if (rightIsNumeric) return 1;
+      return leftToken.localeCompare(rightToken);
+    }
+
+    function addFlatTimeComparisonValue(map, key, label, datasetId, value, meta = {}) {
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          label,
+          total: 0,
+          ...meta,
+        });
+      }
+      const item = map.get(key);
+      item[datasetId] = Number(item[datasetId] || 0) + Number(value || 0);
+      item.total += Number(value || 0);
+      return item;
+    }
+
+    function finalizeFlatTimeComparisonItems(map, datasets, sorter) {
+      return Array.from(map.values())
+        .map((item) => {
+          datasets.forEach((dataset) => {
+            item[dataset.id] = Number(item[dataset.id] || 0);
+          });
+          return item;
+        })
+        .sort(
+          sorter ||
+            ((left, right) =>
+              Number(right.total || 0) - Number(left.total || 0) ||
+              String(left.label || "").localeCompare(String(right.label || "")))
+        );
+    }
+
+    function buildFlatTimeComparisonData(datasets) {
+      const phaseTimesMap = new Map();
+      const drillingTimesMap = new Map();
+      const phaseDetailsMap = new Map();
+      const phasesSeen = new Set();
+
+      datasets.forEach((dataset) => {
+        dataset.groups.forEach((group) => {
+          group.activities.forEach((activity) => {
+            const hours = Number(activity.subjectHours || 0);
+            if (hours <= 0) return;
+
+            const parts = extractFlatTimeComparisonParts(activity.activity, group.groupName);
+            const phase = parts.phase;
+            phasesSeen.add(phase);
+
+            if (!phaseDetailsMap.has(phase)) {
+              phaseDetailsMap.set(phase, {
+                phase,
+                majorOpMap: new Map(),
+                actionMap: new Map(),
+                activityMap: new Map(),
+              });
+            }
+
+            const phaseDetails = phaseDetailsMap.get(phase);
+
+            if (isFlatTimeDrillingAction(parts.action)) {
+              addFlatTimeComparisonValue(
+                drillingTimesMap,
+                phase,
+                formatFlatTimeComparisonPhaseLabel(phase),
+                dataset.id,
+                hours,
+                { phase }
+              );
+              return;
+            }
+
+            addFlatTimeComparisonValue(
+              phaseDetails.activityMap,
+              activity.activity,
+              activity.activity,
+              dataset.id,
+              hours,
+              {
+                phase,
+                majorOp: parts.majorOp,
+                action: parts.action,
+              }
+            );
+
+            addFlatTimeComparisonValue(
+              phaseTimesMap,
+              phase,
+              formatFlatTimeComparisonPhaseLabel(phase),
+              dataset.id,
+              hours,
+              { phase }
+            );
+            addFlatTimeComparisonValue(
+              phaseDetails.majorOpMap,
+              parts.majorOp,
+              parts.majorOp,
+              dataset.id,
+              hours,
+              { phase, majorOp: parts.majorOp }
+            );
+            addFlatTimeComparisonValue(
+              phaseDetails.actionMap,
+              parts.action,
+              parts.action,
+              dataset.id,
+              hours,
+              { phase, action: parts.action }
+            );
+          });
+        });
+      });
+
+      const phaseOrder = Array.from(phasesSeen).sort(compareFlatTimePhases);
+      const phaseTimesItems = phaseOrder
+        .map((phase) => {
+          const item =
+            phaseTimesMap.get(phase) ||
+            { key: phase, phase, label: formatFlatTimeComparisonPhaseLabel(phase), total: 0 };
+          datasets.forEach((dataset) => {
+            item[dataset.id] = Number(item[dataset.id] || 0);
+          });
+          return item;
+        })
+        .filter((item) => Number(item.total || 0) > 0);
+      const drillingTimeItems = phaseOrder
+        .map((phase) => {
+          const item =
+            drillingTimesMap.get(phase) ||
+            { key: phase, phase, label: formatFlatTimeComparisonPhaseLabel(phase), total: 0 };
+          datasets.forEach((dataset) => {
+            item[dataset.id] = Number(item[dataset.id] || 0);
+          });
+          return item;
+        })
+        .filter((item) => Number(item.total || 0) > 0);
+      const progressionItems = phaseOrder
+        .map((phase) => {
+          const phaseItem =
+            phaseTimesMap.get(phase) ||
+            { key: phase, phase, label: formatFlatTimeComparisonPhaseLabel(phase), total: 0 };
+          const drillingItem =
+            drillingTimesMap.get(phase) ||
+            { key: phase, phase, label: formatFlatTimeComparisonPhaseLabel(phase), total: 0 };
+          const item = {
+            key: phase,
+            phase,
+            label: formatFlatTimeComparisonPhaseLabel(phase),
+            totalFlatHours: Number(phaseItem.total || 0),
+            totalDrillingHours: Number(drillingItem.total || 0),
+          };
+          datasets.forEach((dataset) => {
+            item[dataset.id + "__flat"] = Number(phaseItem[dataset.id] || 0);
+            item[dataset.id + "__drill"] = Number(drillingItem[dataset.id] || 0);
+          });
+          return item;
+        })
+        .filter((item) => Number(item.totalFlatHours || 0) > 0 || Number(item.totalDrillingHours || 0) > 0);
+
+      const phaseDetails = phaseOrder
+        .map((phase) => {
+          const detail = phaseDetailsMap.get(phase);
+          if (!detail) return null;
+          const majorOpItems = finalizeFlatTimeComparisonItems(detail.majorOpMap, datasets);
+          const actionItems = finalizeFlatTimeComparisonItems(detail.actionMap, datasets).slice(0, 10);
+          const topActivities = finalizeFlatTimeComparisonItems(detail.activityMap, datasets).slice(0, 10);
+          return {
+            phase,
+            phaseLabel: formatFlatTimeComparisonPhaseLabel(phase),
+            majorOpItems,
+            actionItems,
+            topActivities,
+          };
+        })
+        .filter(Boolean)
+        .filter((detail) => detail.majorOpItems.length || detail.actionItems.length || detail.topActivities.length);
+
+      return {
+        phaseOrder,
+        phaseTimesItems,
+        drillingTimeItems,
+        progressionItems,
+        phaseDetails,
+      };
+    }
+
+    function buildComparisonDatasetsOrder(datasets, selectedDataset) {
+      return datasets
+        .slice()
+        .sort((left, right) => {
+          if (selectedDataset) {
+            if (left.id === selectedDataset.id && right.id !== selectedDataset.id) return -1;
+            if (right.id === selectedDataset.id && left.id !== selectedDataset.id) return 1;
+          }
+          return left.subjectWell.localeCompare(right.subjectWell);
+        });
+    }
+
+    function buildComparisonSeriesDefs(datasets, selectedDataset) {
+      return buildComparisonDatasetsOrder(datasets, selectedDataset).map((dataset, index) => ({
+        key: dataset.id,
+        label: dataset.id === (selectedDataset && selectedDataset.id) ? dataset.subjectWell + " (selected)" : dataset.subjectWell,
+        color: FLAT_TIME_SERIES_COLORS[index % FLAT_TIME_SERIES_COLORS.length],
+        format: (value) => formatHours(value),
+        isSelected: dataset.id === (selectedDataset && selectedDataset.id),
+      }));
+    }
+
+    function buildFlatTimeComparisonDeltaHtml(value) {
+      const numeric = Number(value || 0);
+      const tone = numeric > 0 ? "comparison-delta-positive" : numeric < 0 ? "comparison-delta-negative" : "comparison-delta-neutral";
+      const sign = numeric > 0 ? "+" : numeric < 0 ? "-" : "";
+      return (
+        '<div class="comparison-delta ' + tone + '">' +
+        '<strong>' + escapeHtml(sign + formatHours(Math.abs(numeric)) + " hr") + '</strong>' +
+        '<span>' + escapeHtml(formatDays(Math.abs(numeric) / 24) + " d") + '</span>' +
+        "</div>"
+      );
+    }
+
+    function buildFlatTimeComparisonValueHtml(hours, options = {}) {
+      const numeric = Number(hours || 0);
+      const tone = options.primary ? " comparison-table-value-primary" : "";
+      return (
+        '<div class="comparison-table-value' + tone + '">' +
+        '<strong>' + escapeHtml(formatHours(numeric) + " hr") + '</strong>' +
+        '<span>' + escapeHtml(formatDays(numeric / 24) + " d") + '</span>' +
+        "</div>"
+      );
+    }
+
+    function buildFlatTimeComparisonOffsetSnapshot(item, datasets, selectedDataset) {
+      const selectedValue = Number(item[selectedDataset.id] || 0);
+      const offsetValues = datasets
+        .filter((dataset) => dataset.id !== selectedDataset.id)
+        .map((dataset) => Number(item[dataset.id] || 0))
+        .filter((value) => value > 0);
+      const offsetAverage = offsetValues.length ? average(offsetValues) : 0;
+      const bestOffset = offsetValues.length ? Math.min(...offsetValues) : 0;
+      return {
+        selectedValue,
+        offsetAverage,
+        bestOffset,
+        differenceVsAverage: selectedValue - offsetAverage,
+        differenceVsBest: selectedValue - bestOffset,
+        offsetCount: offsetValues.length,
+        selectedOnly: selectedValue > 0 && !offsetValues.length,
+      };
+    }
+
+    function buildFlatTimeComparisonSelectedOnlyBadgeHtml() {
+      return '<span class="comparison-flag">Selected well only</span>';
+    }
+
+    function buildFlatTimeComparisonDisplayActivities(items, datasets, selectedDataset, limit = 10) {
+      const enriched = items.map((item) => ({
+        item,
+        snapshot: buildFlatTimeComparisonOffsetSnapshot(item, datasets, selectedDataset),
+      }));
+
+      const selectedOnly = enriched
+        .filter((entry) => entry.snapshot.selectedOnly)
+        .sort((left, right) =>
+          right.snapshot.selectedValue - left.snapshot.selectedValue ||
+          String(left.item.label || "").localeCompare(String(right.item.label || ""))
+        );
+
+      const remaining = enriched
+        .filter((entry) => !entry.snapshot.selectedOnly)
+        .sort((left, right) =>
+          Number(right.item.total || 0) - Number(left.item.total || 0) ||
+          String(left.item.label || "").localeCompare(String(right.item.label || ""))
+        );
+
+      return [...selectedOnly, ...remaining].slice(0, limit);
+    }
+
+    function renderFlatTimeComparisonOverview(target, items, datasets, selectedDataset, emptyMessage, options = {}) {
+      if (!target) return;
+      if (!selectedDataset || !items.length) {
+        target.innerHTML = '<div class="empty">' + escapeHtml(emptyMessage) + '</div>';
+        return;
+      }
+
+      const orderedDatasets = buildComparisonDatasetsOrder(datasets, selectedDataset);
+      const seriesDefs = buildComparisonSeriesDefs(orderedDatasets, selectedDataset);
+
+      target.innerHTML =
+        '<div class="legend"></div>' +
+        '<div class="comparison-chart-body"></div>' +
+        '<div class="comparison-table-toolbar"><span class="chip">Selected well: ' + escapeHtml(selectedDataset.subjectWell) + '</span></div>' +
+        '<div class="comparison-phase-table"></div>';
+      renderFlatTimeSeriesLegend(target.querySelector(".legend"), seriesDefs);
+      renderMultiSeriesChart(
+        target.querySelector(".comparison-chart-body"),
+        items,
+        seriesDefs,
+        {
+          height: 400,
+          minWidth: 860,
+          groupMinWidth: 150,
+        }
+      );
+      renderTableHtml(
+        target.querySelector(".comparison-phase-table"),
+        [
+          options.labelHeader || "Phase",
+          "Selected",
+          "Offset Avg",
+          "Best Offset",
+          "Vs Avg",
+          "Vs Best",
+        ],
+        items.map((item) => {
+          const snapshot = buildFlatTimeComparisonOffsetSnapshot(item, orderedDatasets, selectedDataset);
+          return [
+            escapeHtml(item.label || item.key || ""),
+            buildFlatTimeComparisonValueHtml(snapshot.selectedValue, { primary: true }),
+            snapshot.offsetCount
+              ? buildFlatTimeComparisonValueHtml(snapshot.offsetAverage)
+              : '<span class="table-summary-missing">-</span>',
+            snapshot.offsetCount
+              ? buildFlatTimeComparisonValueHtml(snapshot.bestOffset)
+              : '<span class="table-summary-missing">-</span>',
+            snapshot.offsetCount ? buildFlatTimeComparisonDeltaHtml(snapshot.differenceVsAverage) : '<span class="table-summary-missing">-</span>',
+            snapshot.offsetCount ? buildFlatTimeComparisonDeltaHtml(snapshot.differenceVsBest) : '<span class="table-summary-missing">-</span>',
+          ];
+        })
+      );
+    }
+
+    function renderFlatTimeComparisonPhaseDetails(target, phaseDetails, datasets, selectedDataset) {
+      if (!target) return;
+      if (!selectedDataset || !phaseDetails.length) {
+        target.innerHTML = '<div class="empty">No comparison detail is available for the loaded phases.</div>';
+        return;
+      }
+
+      const orderedDatasets = buildComparisonDatasetsOrder(datasets, selectedDataset);
+      const seriesDefs = buildComparisonSeriesDefs(orderedDatasets, selectedDataset);
+
+      target.innerHTML =
+        '<div class="comparison-phase-stack">' +
+        phaseDetails
+          .map((detail, index) => (
+            '<div class="comparison-phase-block">' +
+            '<div class="card-toolbar">' +
+            '<div><h3 style="margin-bottom:6px;">' + escapeHtml(detail.phaseLabel + " Phase") + '</h3><p class="report-note">Major OP, Action, and top activity comparison for this phase. Drilling actions D, DMR, and DMS are excluded from the charts and the table below. Activities flagged as <strong>Selected well only</strong> appear only in the selected well and should be reviewed for possible time loss.</p></div>' +
+            '<span class="chip">' + escapeHtml(String(detail.topActivities.length) + " top activities shown") + '</span>' +
+            '</div>' +
+            '<div class="comparison-phase-grid">' +
+            '<div class="comparison-phase-panel"><h4>Major OP</h4><div id="flat-time-comparison-major-legend-' + index + '" class="legend"></div><div id="flat-time-comparison-major-chart-' + index + '"></div></div>' +
+            '<div class="comparison-phase-panel"><h4>Actions</h4><div id="flat-time-comparison-action-legend-' + index + '" class="legend"></div><div id="flat-time-comparison-action-chart-' + index + '"></div></div>' +
+            '</div>' +
+            '<div class="comparison-table-toolbar"><span class="chip">Selected well: ' + escapeHtml(selectedDataset.subjectWell) + '</span></div>' +
+            '<div class="comparison-phase-table" id="flat-time-comparison-phase-table-' + index + '"></div>' +
+            '</div>'
+          ))
+          .join("") +
+        '</div>';
+
+      phaseDetails.forEach((detail, index) => {
+        const majorLegend = target.querySelector("#flat-time-comparison-major-legend-" + index);
+        const majorChart = target.querySelector("#flat-time-comparison-major-chart-" + index);
+        const actionLegend = target.querySelector("#flat-time-comparison-action-legend-" + index);
+        const actionChart = target.querySelector("#flat-time-comparison-action-chart-" + index);
+        const tableTarget = target.querySelector("#flat-time-comparison-phase-table-" + index);
+        const displayActivities = buildFlatTimeComparisonDisplayActivities(detail.topActivities, orderedDatasets, selectedDataset, 10);
+
+        renderFlatTimeSeriesLegend(majorLegend, seriesDefs);
+        renderMultiSeriesChart(
+          majorChart,
+          detail.majorOpItems,
+          seriesDefs,
+          {
+            height: 360,
+            minWidth: 760,
+            groupMinWidth: 140,
+          }
+        );
+
+        renderFlatTimeSeriesLegend(actionLegend, seriesDefs);
+        renderMultiSeriesChart(
+          actionChart,
+          detail.actionItems,
+          seriesDefs,
+          {
+            height: 360,
+            minWidth: 760,
+            groupMinWidth: 140,
+          }
+        );
+
+        renderTableHtml(
+          tableTarget,
+          [
+            "Activity",
+            "Major OP",
+            "Action",
+            "Selected",
+            "Offset Avg",
+            "Best Offset",
+            "Vs Avg",
+            "Vs Best",
+          ],
+          displayActivities.map(({ item, snapshot }) => {
+            return [
+              flatTimeActivityLabelHtml(item.label) + (snapshot.selectedOnly ? "<br>" + buildFlatTimeComparisonSelectedOnlyBadgeHtml() : ""),
+              escapeHtml(item.majorOp || "Unknown"),
+              escapeHtml(item.action || "Unknown"),
+              buildFlatTimeComparisonValueHtml(snapshot.selectedValue, { primary: true }),
+              snapshot.offsetCount
+                ? buildFlatTimeComparisonValueHtml(snapshot.offsetAverage)
+                : '<span class="table-summary-missing">No offset record</span>',
+              snapshot.offsetCount
+                ? buildFlatTimeComparisonValueHtml(snapshot.bestOffset)
+                : '<span class="table-summary-missing">No offset record</span>',
+              snapshot.offsetCount ? buildFlatTimeComparisonDeltaHtml(snapshot.differenceVsAverage) : buildFlatTimeComparisonSelectedOnlyBadgeHtml(),
+              snapshot.offsetCount ? buildFlatTimeComparisonDeltaHtml(snapshot.differenceVsBest) : buildFlatTimeComparisonSelectedOnlyBadgeHtml(),
+            ];
+          })
+        );
+      });
+    }
+
+    function renderFlatTimeComparisonProgression(target, progressionItems, datasets, selectedDataset) {
+      if (!target) return;
+      if (!progressionItems.length || !datasets.length || !selectedDataset) {
+        target.innerHTML = '<div class="empty">No phase progression data is available for the loaded wells.</div>';
+        return;
+      }
+
+      const visibleItems = progressionItems.filter((item) => String(item.phase || "").trim() !== "PRE");
+      if (!visibleItems.length) {
+        target.innerHTML = '<div class="empty">No section progression is available after excluding the PRE phase.</div>';
+        return;
+      }
+
+      const phaseOrder = visibleItems.map((item) => item.phase);
+      const chartTheme = getChartTheme();
+      const width = 1040;
+      const height = 470;
+      const margin = { top: 24, right: 116, bottom: 84, left: 96 };
+      const chartWidth = width - margin.left - margin.right;
+      const chartHeight = height - margin.top - margin.bottom;
+      const yPadTop = 8;
+      const yPadBottom = 32;
+      const yUsableHeight = Math.max(chartHeight - yPadTop - yPadBottom, 1);
+
+      const orderedDatasets = buildComparisonDatasetsOrder(datasets, selectedDataset);
+      const series = orderedDatasets.map((dataset, index) => {
+        let cumulativeDays = 0;
+        const points = [];
+        visibleItems.forEach((item, phaseIndex) => {
+          const currentPhaseIndex = phaseIndex + 1;
+          const flatDays = Number(item[dataset.id + "__flat"] || 0) / 24;
+          const drillDays = Number(item[dataset.id + "__drill"] || 0) / 24;
+          if (!points.length) {
+            points.push({
+              label: item.label,
+              cumulativeDays: 0,
+              phaseIndex: currentPhaseIndex,
+              segment: "start",
+            });
+          }
+          cumulativeDays += flatDays;
+          points.push({
+            label: item.label,
+            cumulativeDays,
+            phaseIndex: currentPhaseIndex,
+            segment: "flat",
+            flatDays,
+            drillDays,
+          });
+          if (phaseIndex < visibleItems.length - 1) {
+            cumulativeDays += drillDays;
+            points.push({
+              label: item.label,
+              cumulativeDays,
+              phaseIndex: currentPhaseIndex + 1,
+              segment: "drill",
+              flatDays,
+              drillDays,
+            });
+          } else if (drillDays > 0) {
+            cumulativeDays += drillDays;
+            points.push({
+              label: item.label,
+              cumulativeDays,
+              phaseIndex: currentPhaseIndex,
+              segment: "drill-final",
+              flatDays,
+              drillDays,
+            });
+          }
+        });
+        return {
+          label: dataset.id === selectedDataset.id ? dataset.subjectWell + " (selected)" : dataset.subjectWell,
+          color: FLAT_TIME_SERIES_COLORS[index % FLAT_TIME_SERIES_COLORS.length],
+          isSelected: dataset.id === selectedDataset.id,
+          points,
+        };
+      });
+
+      const domainMaxDays = Math.max(1, Math.max(
+        ...series.flatMap((line) => line.points.map((point) => point.cumulativeDays)),
+        1
+      ) * 1.12);
+      const maxDepth = Math.max(phaseOrder.length, 1);
+
+      const scaledSeries = series.map((line) => ({
+        ...line,
+        points: line.points.map((point) => ({
+          ...point,
+          x: margin.left + (point.cumulativeDays / domainMaxDays) * chartWidth,
+          y: margin.top + yPadTop + ((point.phaseIndex - 1) / Math.max(maxDepth - 1, 1)) * yUsableHeight,
+        })),
+      }));
+
+      const xTicks = Array.from({ length: 6 }, (_, index) => {
+        const value = (domainMaxDays / 5) * index;
+        const x = margin.left + (value / domainMaxDays) * chartWidth;
+        return (
+          '<g>' +
+          '<line x1="' + x.toFixed(2) + '" y1="' + margin.top + '" x2="' + x.toFixed(2) + '" y2="' + (height - margin.bottom) + '" stroke="' + chartTheme.grid + '" stroke-dasharray="4 5"></line>' +
+          '<text x="' + x.toFixed(2) + '" y="' + (height - 12) + '" text-anchor="middle" font-size="11" fill="' + chartTheme.valueLabel + '">' + escapeHtml(formatDays(value)) + "</text>" +
+          "</g>"
+        );
+      }).join("");
+
+      const yTicks = phaseOrder
+        .map((phase, index) => {
+          const y = margin.top + yPadTop + (index / Math.max(maxDepth - 1, 1)) * yUsableHeight;
+          return (
+            '<g>' +
+            '<line x1="' + margin.left + '" y1="' + y.toFixed(2) + '" x2="' + (width - margin.right) + '" y2="' + y.toFixed(2) + '" stroke="' + chartTheme.grid + '" stroke-dasharray="4 5"></line>' +
+            '<text x="' + (margin.left - 12) + '" y="' + (y + 4).toFixed(2) + '" text-anchor="end" font-size="11" font-weight="700" fill="' + chartTheme.text + '">' + escapeHtml(formatFlatTimeComparisonPhaseLabel(phase)) + "</text>" +
+            '</g>'
+          );
+        })
+        .join("");
+
+      const lineSvg = scaledSeries
+        .map((line, index) => {
+          const path = line.points.map((point, index) => (index === 0 ? "M" : "L") + point.x.toFixed(2) + " " + point.y.toFixed(2)).join(" ");
+          const endPoint = line.points[line.points.length - 1];
+          const labelYOffset = (index - (scaledSeries.length - 1) / 2) * 12;
+          const labelY = Math.max(margin.top + 12, Math.min(height - margin.bottom - 8, endPoint.y + labelYOffset));
+          return (
+            '<g>' +
+            '<path d="' + path + '" fill="none" stroke="' + line.color + '" stroke-width="' + (line.isSelected ? "4.2" : "2.8") + '" stroke-linecap="round" stroke-linejoin="round"></path>' +
+            '<text x="' + Math.min(width - 10, endPoint.x + 14).toFixed(2) + '" y="' + labelY.toFixed(2) + '" font-size="11" font-weight="700" fill="' + chartTheme.pointLabel + '">' + escapeHtml(line.label + " • " + formatDays(endPoint.cumulativeDays) + " d") + '</text>' +
+            '</g>'
+          );
+        })
+        .join("");
+
+      const legend = series
+        .map((line) => (
+          '<span class="legend-item" style="margin-right:12px;">' +
+          '<span class="legend-dot" style="background:' + line.color + '; width:14px; height:14px;"></span>' +
+          escapeHtml(line.label) +
+          '</span>'
+        ))
+        .join("");
+
+      target.innerHTML =
+        '<div class="legend" style="margin-bottom:12px; flex-wrap:wrap;">' + legend + '</div>' +
+        '<p class="report-note">PRE is excluded from this chart. Horizontal segments represent flat time in each phase, while the transition between phases represents drilling time from actions D, DMR, and DMS.</p>' +
+        '<div class="column-chart-wrap">' +
+        '<svg class="column-chart-svg" viewBox="0 0 ' + width + " " + height + '" role="img" aria-label="Phase progression by days chart">' +
+        xTicks +
+        yTicks +
+        '<line x1="' + margin.left + '" y1="' + margin.top + '" x2="' + margin.left + '" y2="' + (height - margin.bottom) + '" stroke="' + chartTheme.axis + '"></line>' +
+        '<line x1="' + margin.left + '" y1="' + (height - margin.bottom) + '" x2="' + (width - margin.right) + '" y2="' + (height - margin.bottom) + '" stroke="' + chartTheme.axis + '"></line>' +
+        lineSvg +
+        '<text x="' + (margin.left + chartWidth / 2).toFixed(2) + '" y="' + (height - 8) + '" text-anchor="middle" font-size="12" font-weight="700" fill="' + chartTheme.text + '">Days</text>' +
+        '<text x="20" y="' + (margin.top + chartHeight / 2).toFixed(2) + '" text-anchor="middle" font-size="12" font-weight="700" fill="' + chartTheme.text + '" transform="rotate(-90 20 ' + (margin.top + chartHeight / 2).toFixed(2) + ')">Depth / Phase Progression</text>' +
+        "</svg></div>";
     }
 
     function buildSectionSavingsSummary(datasets, breakdownMap) {
@@ -810,14 +1513,14 @@
       const rankingRow = wellRanking.find((row) => row.wellLabel === selectedDataset.subjectWell);
       const topActivities = (worstSection?.topGapActivities || [])
         .slice(0, 3)
-        .map((item) => item.activityLabel + " (" + formatNumber(item.gap) + " hr)")
+        .map((item) => item.activityLabel + " (" + formatHours(item.gap) + " hr)")
         .join(", ");
 
       const paragraphs = [
-        '<p><strong>' + escapeHtml(selectedDataset.subjectWell) + '</strong> is currently running with <strong>' + escapeHtml(formatNumber(rankingRow?.excessTotal || 0)) + ' hr</strong> above the recommended flat time benchmark. The section creating the largest burden is <strong>' + escapeHtml(worstSection?.label || "N/A") + '</strong>, where the well is spending <strong>' + escapeHtml(formatNumber(worstSection?.actualTotal || 0)) + ' hr</strong> against an ideal target of <strong>' + escapeHtml(formatNumber(worstSection?.idealTotal || 0)) + ' hr</strong>.</p>',
+        '<p><strong>' + escapeHtml(selectedDataset.subjectWell) + '</strong> is currently running with <strong>' + escapeHtml(formatHours(rankingRow?.excessTotal || 0)) + ' hr</strong> above the recommended flat time benchmark. The section creating the largest burden is <strong>' + escapeHtml(worstSection?.label || "N/A") + '</strong>, where the well is spending <strong>' + escapeHtml(formatHours(worstSection?.actualTotal || 0)) + ' hr</strong> against an ideal target of <strong>' + escapeHtml(formatHours(worstSection?.idealTotal || 0)) + ' hr</strong>.</p>',
         '<p>The system selected this section because it combines the largest recoverable gap with repeatable activities seen across the loaded offsets. In this section, the main drivers are <strong>' + escapeHtml(topActivities || "no recurring drivers identified") + '</strong>. This means the opportunity is not just the single slowest event, but a recurring pattern where the selected well is running slower than the best validated performance.</p>',
         strongestSavings
-          ? '<p>The most actionable recovery area across the current benchmark set is <strong>' + escapeHtml(strongestSavings.sectionLabel) + '</strong>, with about <strong>' + escapeHtml(formatNumber(strongestSavings.recoverableHours)) + ' hr</strong> (' + escapeHtml(formatNumber(strongestSavings.recoverableDays)) + ' d) available to recover. The recommended action is to attack <strong>' + flatTimeActivityLabelHtml(strongestSavings.topActivity) + '</strong> first because it is the strongest repeated source of excess time and already has a <strong>' + confidenceBadgeHtml(strongestSavings.confidence) + '</strong> benchmark behind it. To recover time, replicate the best observed sequence, remove waiting between dependent steps, and standardize the execution around the loaded offsets that already achieved the lower time.</p>'
+          ? '<p>The most actionable recovery area across the current benchmark set is <strong>' + escapeHtml(strongestSavings.sectionLabel) + '</strong>, with about <strong>' + escapeHtml(formatHours(strongestSavings.recoverableHours)) + ' hr</strong> (' + escapeHtml(formatDays(strongestSavings.recoverableDays)) + ' d) available to recover. The recommended action is to attack <strong>' + flatTimeActivityLabelHtml(strongestSavings.topActivity) + '</strong> first because it is the strongest repeated source of excess time and already has a <strong>' + confidenceBadgeHtml(strongestSavings.confidence) + '</strong> benchmark behind it. To recover time, replicate the best observed sequence, remove waiting between dependent steps, and standardize the execution around the loaded offsets that already achieved the lower time.</p>'
           : '<p>No strong recurring section-level savings case is available yet. Load more offsets to increase benchmark confidence and reveal stable section opportunities.</p>',
       ];
 
@@ -850,22 +1553,24 @@
           gap: item.gapTotal,
         })),
         [
-          { key: "actual", label: selectedDataset.subjectWell + " actual", color: "#1264d6", format: (value) => formatNumber(value) },
-          { key: "ideal", label: "Recommended ideal", color: "#0f766e", format: (value) => formatNumber(value) },
-          { key: "gap", label: "Recoverable gap", color: "#c06a0a", format: (value) => formatNumber(value) },
+          { key: "actual", label: selectedDataset.subjectWell + " actual", color: "#1264d6", format: (value) => formatHours(value) },
+          { key: "ideal", label: "Recommended ideal", color: "#0f766e", format: (value) => formatHours(value) },
+          { key: "gap", label: "Recoverable gap", color: "#c06a0a", format: (value) => formatHours(value) },
         ],
         { height: 420, minWidth: 760, groupMinWidth: 150 }
       );
 
       renderTableHtml(
         tableTarget,
-        ["Section", "Actual (hr)", "Synthetic Ideal (hr)", "Gap (hr)", "Top 3 Time Consumers"],
+        ["Section", "Actual (hr)", "Synthetic Ideal (hr)", "Gap (hr)", "Top 3 Time Reduction Opportunities"],
         sectionItems.map((item) => [
           escapeHtml(item.label),
-          escapeHtml(formatNumber(item.actualTotal)),
-          escapeHtml(formatNumber(item.idealTotal)),
-          escapeHtml(formatNumber(item.gapTotal)),
-          item.topActivities.map((activity) => flatTimeActivityLabelHtml(activity.activityLabel) + escapeHtml(" (" + formatNumber(activity.actual) + " hr)")).join("<br>"),
+          escapeHtml(formatHours(item.actualTotal)),
+          escapeHtml(formatHours(item.idealTotal)),
+          escapeHtml(formatHours(item.gapTotal)),
+          (item.topGapActivities && item.topGapActivities.length ? item.topGapActivities : item.topActivities)
+            .map((activity) => flatTimeActivityLabelHtml(activity.activityLabel) + escapeHtml(" (+" + formatHours(activity.gap || 0) + " hr / " + formatDays((activity.gap || 0) / 24) + " d)"))
+            .join("<br>"),
         ])
       );
     }
@@ -898,10 +1603,10 @@
           ideal: item.idealTotal,
         })),
         [
-          { key: "selected", label: selectedDataset.subjectWell, color: "#1264d6", format: (value) => formatNumber(value) },
-          { key: "offsetAverage", label: "Offset avg", color: "#0f766e", format: (value) => formatNumber(value) },
-          { key: "bestOffset", label: "Best offset", color: "#7c3aed", format: (value) => formatNumber(value) },
-          { key: "ideal", label: "Recommended ideal", color: "#c06a0a", format: (value) => formatNumber(value) },
+          { key: "selected", label: selectedDataset.subjectWell, color: "#1264d6", format: (value) => formatHours(value) },
+          { key: "offsetAverage", label: "Offset avg", color: "#0f766e", format: (value) => formatHours(value) },
+          { key: "bestOffset", label: "Best offset", color: "#7c3aed", format: (value) => formatHours(value) },
+          { key: "ideal", label: "Recommended ideal", color: "#c06a0a", format: (value) => formatHours(value) },
         ],
         { height: 420, minWidth: 820, groupMinWidth: 160 }
       );
@@ -911,12 +1616,12 @@
         ["Section", selectedDataset.subjectWell + " (hr)", "Offset Avg (hr)", "Best Offset (hr)", "Best Offset Well", "Synthetic Ideal (hr)", "Gap vs Offset Avg (hr)"],
         sectionItems.map((item) => [
           item.label,
-          formatNumber(item.actualTotal),
-          formatNumber(item.offsetAverage),
-          formatNumber(item.bestOffset),
+          formatHours(item.actualTotal),
+          formatHours(item.offsetAverage),
+          formatHours(item.bestOffset),
           item.bestOffsetWell === "No peer" ? item.bestOffsetWell : item.bestOffsetWell + " (" + item.bestOffsetRig + ")",
-          formatNumber(item.idealTotal),
-          formatNumber(item.gapVsOffsetAverage),
+          formatHours(item.idealTotal),
+          formatHours(item.gapVsOffsetAverage),
         ])
       );
     }
@@ -956,7 +1661,7 @@
           const opacity = maxGap > 0 ? Math.max(0.12, gap / maxGap) : 0;
           const bg = gap > 0 ? 'rgba(200, 30, 90, ' + opacity.toFixed(2) + ')' : 'rgba(18, 100, 214, 0.06)';
           const color = gap > 0.01 ? '#ffffff' : 'var(--ink)';
-          return '<td style="background:' + bg + '; color:' + color + '; font-weight:700; text-align:center;">' + escapeHtml(formatNumber(gap)) + '</td>';
+          return '<td style="background:' + bg + '; color:' + color + '; font-weight:700; text-align:center;">' + escapeHtml(formatHours(gap)) + '</td>';
         }).join('');
         return '<tr><td><strong>' + escapeHtml(dataset.subjectWell) + '</strong><br><span style="color:var(--muted); font-size:12px;">' + escapeHtml(dataset.rigLabel || "") + '</span></td>' + cells + '</tr>';
       }).join('');
@@ -1014,7 +1719,7 @@
         return (
           '<g>' +
           '<line x1="' + margin.left + '" y1="' + y.toFixed(2) + '" x2="' + (width - margin.right) + '" y2="' + y.toFixed(2) + '" stroke="' + chartTheme.grid + '" stroke-dasharray="4 5"></line>' +
-          '<text x="' + (margin.left - 10) + '" y="' + (y + 4).toFixed(2) + '" text-anchor="end" font-size="11" fill="' + chartTheme.valueLabel + '">' + escapeHtml(formatNumber(value)) + '</text>' +
+          '<text x="' + (margin.left - 10) + '" y="' + (y + 4).toFixed(2) + '" text-anchor="end" font-size="11" fill="' + chartTheme.valueLabel + '">' + escapeHtml(formatHours(value)) + '</text>' +
           '</g>'
         );
       }).join("");
@@ -1030,7 +1735,7 @@
         const centerX = x + barWidth / 2;
         const labelLines = wrapChartLabel(step.label, 16);
         const labelSvg = labelLines.map((line, lineIndex) => '<tspan x="' + centerX.toFixed(2) + '" dy="' + (lineIndex === 0 ? 0 : 13) + '">' + escapeHtml(line) + '</tspan>').join("");
-        const displayValue = step.type === "delta" ? formatNumber(Math.abs(step.delta || 0)) : formatNumber(step.end);
+        const displayValue = step.type === "delta" ? formatHours(Math.abs(step.delta || 0)) : formatHours(step.end);
         return (
           '<g>' +
           '<rect x="' + x.toFixed(2) + '" y="' + y.toFixed(2) + '" width="' + barWidth.toFixed(2) + '" height="' + heightValue.toFixed(2) + '" rx="10" fill="' + fill + '"></rect>' +
@@ -1081,7 +1786,7 @@
         return (
           '<g>' +
           '<line x1="' + x.toFixed(2) + '" y1="' + margin.top + '" x2="' + x.toFixed(2) + '" y2="' + (height - margin.bottom) + '" stroke="' + chartTheme.grid + '" stroke-dasharray="4 5"></line>' +
-          '<text x="' + x.toFixed(2) + '" y="' + (height - 10) + '" text-anchor="middle" font-size="11" fill="' + chartTheme.valueLabel + '">' + escapeHtml(formatNumber(value)) + '</text>' +
+          '<text x="' + x.toFixed(2) + '" y="' + (height - 10) + '" text-anchor="middle" font-size="11" fill="' + chartTheme.valueLabel + '">' + escapeHtml(formatHours(value)) + '</text>' +
           '</g>'
         );
       }).join("");
@@ -1139,16 +1844,19 @@
     }
 
     function renderFlatTimeDrilldown(datasets, opportunities, selectedWell, selectedActivities, sectionOptionDatasets) {
-      const selectedDataset = datasets.find((dataset) => dataset.subjectWell === selectedWell) || datasets[0];
-      const selectedOpportunity = buildSelectedActivityAggregate(opportunities, selectedActivities);
+      const wellOptionDatasets = sectionOptionDatasets && sectionOptionDatasets.length ? sectionOptionDatasets : datasets;
+      const drilldownSelectedDataset = wellOptionDatasets.find((dataset) => dataset.subjectWell === selectedWell) || datasets.find((dataset) => dataset.subjectWell === selectedWell) || wellOptionDatasets[0] || datasets[0];
+      const selectedDataset = datasets.find((dataset) => dataset.subjectWell === selectedWell) || datasets[0] || drilldownSelectedDataset;
+      const explorerOpportunities = (opportunities || []).filter(isFlatTimeOnlyOpportunity);
+      const selectedOpportunity = buildSelectedActivityAggregate(explorerOpportunities, selectedActivities);
 
-      if (!selectedDataset || !selectedOpportunity) {
+      if (!selectedDataset) {
         ui.flatTimeWellDrilldown.innerHTML = '<div class="empty">Select more CSVs to unlock the drill-down.</div>';
         ui.flatTimeActivityDrilldown.innerHTML = '<div class="empty">Select more CSVs to unlock the activity benchmark.</div>';
         return;
       }
 
-      const allWellDrivers = opportunities
+      const allWellDrivers = explorerOpportunities
         .map((opportunity) => {
           const actual = Number(opportunity.ranked.find((entry) => entry.datasetId === selectedDataset.id)?.value || 0);
           const gap = Math.max(actual - opportunity.idealTime, 0);
@@ -1165,20 +1873,22 @@
         .sort((left, right) => right.gap - left.gap || right.actual - left.actual || left.activityLabel.localeCompare(right.activityLabel));
 
       const wellDrivers = allWellDrivers.slice(0, 6);
-      const wellOptions = datasets
+      const wellOptions = wellOptionDatasets
         .slice()
         .sort((left, right) => left.subjectWell.localeCompare(right.subjectWell))
         .map((dataset) => (
           '<option value="' + escapeHtml(dataset.subjectWell) + '"' +
-          (dataset.subjectWell === selectedDataset.subjectWell ? " selected" : "") +
+          (dataset.subjectWell === drilldownSelectedDataset.subjectWell ? " selected" : "") +
           '>' + escapeHtml(dataset.subjectWell + (dataset.rigLabel ? " • " + dataset.rigLabel : "")) + "</option>"
         ))
         .join("");
+      const availableSections = getFlatTimeSectionSizesForDataset(drilldownSelectedDataset);
+      const selectedSectionValue = availableSections.includes(ui.flatTimeSection.value || "") ? (ui.flatTimeSection.value || "") : "";
       const sectionOptions = ['<option value="">All section sizes</option>']
         .concat(
-          getAvailableFlatTimeSectionSizes(sectionOptionDatasets || datasets).map((sectionSize) => (
+          availableSections.map((sectionSize) => (
             '<option value="' + escapeHtml(sectionSize) + '"' +
-            (sectionSize === (ui.flatTimeSection.value || "") ? " selected" : "") +
+            (sectionSize === selectedSectionValue ? " selected" : "") +
             '>' + escapeHtml(formatFlatTimeSectionSize(sectionSize)) + "</option>"
           ))
         )
@@ -1201,9 +1911,9 @@
         '</div>' +
         '<div class="metric-strip" style="margin-bottom:14px;">' +
         '<div class="metric-pill"><div class="label">Selected Well</div><div class="value"><span class="value-main">' + escapeHtml(selectedDataset.subjectWell) + '</span></div><div class="meta">' + escapeHtml(selectedDataset.rigLabel || "Rig not mapped") + '</div></div>' +
-        '<div class="metric-pill"><div class="label">Actual Flat Time</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(wellActualTotal)) + '</span><span class="value-suffix">' + escapeHtml("hr / " + formatNumber(wellActualTotal / 24) + " d") + '</span></div><div class="meta">All activities in the selected filter context</div></div>' +
-        '<div class="metric-pill"><div class="label">Ideal Flat Time</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(wellIdealTotal)) + '</span><span class="value-suffix">' + escapeHtml("hr / " + formatNumber(wellIdealTotal / 24) + " d") + '</span></div><div class="meta">Recommended achievable total for the same activities</div></div>' +
-        '<div class="metric-pill"><div class="label">Recoverable Gap</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(wellExcess)) + '</span><span class="value-suffix">' + escapeHtml("hr / " + formatNumber(wellExcess / 24) + " d") + '</span></div><div class="meta">Time above the recommended ideal</div></div>' +
+        '<div class="metric-pill"><div class="label">Actual Flat Time</div><div class="value"><span class="value-main">' + escapeHtml(formatHours(wellActualTotal)) + '</span><span class="value-suffix">' + escapeHtml("hr / " + formatDays(wellActualTotal / 24) + " d") + '</span></div><div class="meta">All activities in the selected filter context</div></div>' +
+        '<div class="metric-pill"><div class="label">Ideal Flat Time</div><div class="value"><span class="value-main">' + escapeHtml(formatHours(wellIdealTotal)) + '</span><span class="value-suffix">' + escapeHtml("hr / " + formatDays(wellIdealTotal / 24) + " d") + '</span></div><div class="meta">Recommended achievable total for the same activities</div></div>' +
+        '<div class="metric-pill"><div class="label">Recoverable Gap</div><div class="value"><span class="value-main">' + escapeHtml(formatHours(wellExcess)) + '</span><span class="value-suffix">' + escapeHtml("hr / " + formatDays(wellExcess / 24) + " d") + '</span></div><div class="meta">Time above the recommended ideal</div></div>' +
         '</div>' +
         '<div class="drill-list">' +
         wellDrivers.map((item) =>
@@ -1217,8 +1927,14 @@
       const drilldownWellSelect = document.getElementById("flat-time-drilldown-well-select");
       if (drilldownWellSelect) {
         drilldownWellSelect.addEventListener("change", () => {
-          flatTimeState.focusWell = drilldownWellSelect.value || "";
-          ui.flatTimeWell.value = flatTimeState.focusWell;
+          const nextWell = drilldownWellSelect.value || "";
+          flatTimeState.focusWell = nextWell;
+          ui.flatTimeWell.value = nextWell;
+          const activeSection = ui.flatTimeSection.value || "";
+          const matchingDataset = wellOptionDatasets.find((dataset) => dataset.subjectWell === nextWell);
+          if (activeSection && !flatTimeDatasetHasSection(matchingDataset, activeSection)) {
+            ui.flatTimeSection.value = "";
+          }
           renderFlatTime();
         });
       }
@@ -1226,53 +1942,80 @@
       const drilldownSectionSelect = document.getElementById("flat-time-drilldown-section-select");
       if (drilldownSectionSelect) {
         drilldownSectionSelect.addEventListener("change", () => {
-          ui.flatTimeSection.value = drilldownSectionSelect.value || "";
+          const nextSection = drilldownSectionSelect.value || "";
+          ui.flatTimeSection.value = nextSection;
           renderFlatTime();
         });
       }
 
-      const peerRows = selectedOpportunity.ranked
-        .slice()
-        .sort((left, right) => right.value - left.value || left.label.localeCompare(right.label))
-        .map((entry) => ({
-          rigLabel: entry.rigLabel || "Rig not mapped",
-          label: entry.label,
-          value: entry.value,
-          gap: Math.max(entry.value - selectedOpportunity.idealTime, 0),
-        }));
-
-      const activityOptions = opportunities
-        .slice()
-        .sort((left, right) => left.activityLabel.localeCompare(right.activityLabel))
-        .map((opportunity) => (
-          '<label class="check-option">' +
-          '<input type="checkbox" class="flat-time-activity-check" value="' + escapeHtml(opportunity.activityLabel) + '"' +
-          (selectedOpportunity.activityLabels.includes(opportunity.activityLabel) ? " checked" : "") +
-          '>' +
-          '<span>' + escapeHtml(opportunity.activityLabel) + "</span>" +
-          "</label>"
-        ))
+      const activityGroups = groupFlatTimeActivitiesForPicker(explorerOpportunities, selectedActivities);
+      const activityOptions = activityGroups
+        .map((group) => {
+          const totalActivities = group.activities.length;
+          const selectedCount = group.activities.filter((activity) => activity.checked).length;
+          const groupChecked = totalActivities > 0 && selectedCount === totalActivities;
+          const groupPartial = selectedCount > 0 && selectedCount < totalActivities;
+          const children = group.activities
+            .map((activity) => (
+              '<label class="check-option check-option-child">' +
+              '<input type="checkbox" class="flat-time-activity-check" value="' + escapeHtml(activity.label) + '"' +
+              (activity.checked ? " checked" : "") +
+              '>' +
+              '<span>' + escapeHtml(activity.label) + "</span>" +
+              "</label>"
+            ))
+            .join("");
+          return (
+            '<div class="check-tree-group">' +
+            '<label class="check-option check-option-parent">' +
+            '<input type="checkbox" class="flat-time-activity-group-check" data-group="' + escapeHtml(group.groupKey) + '"' +
+            (groupChecked ? " checked" : "") +
+            (groupPartial ? ' data-indeterminate="true"' : "") +
+            '>' +
+            '<span><strong>' + escapeHtml(group.groupKey) + '</strong> • ' + escapeHtml(group.groupDisplay) + "</span>" +
+            "</label>" +
+            '<div class="check-tree-children" data-group="' + escapeHtml(group.groupKey) + '">' + children + "</div>" +
+            "</div>"
+          );
+        })
         .join("");
-      const selectedActivitiesLabel = selectedOpportunity.activityLabels.length
-        ? (selectedOpportunity.activityLabels.length <= 2
-            ? selectedOpportunity.activityLabels.join(", ")
-            : (selectedOpportunity.activityLabels.length + " activities selected"))
+      const selectedActivitiesLabel = selectedActivities && selectedActivities.length
+        ? (((selectedOpportunity && selectedOpportunity.activityLabels.length) || selectedActivities.length) <= 2
+            ? selectedActivities.join(", ")
+            : (selectedActivities.length + " activities selected"))
         : "Choose activities";
 
-      ui.flatTimeActivityDrilldown.innerHTML =
+      let activityDrilldownHtml =
         '<div class="field" style="margin-bottom:14px; max-width:420px;">' +
         '<label for="flat-time-drilldown-activity-picker">Selected Activities</label>' +
-        '<details class="check-dropdown" id="flat-time-drilldown-activity-picker">' +
+        '<details class="check-dropdown" id="flat-time-drilldown-activity-picker"' + (flatTimeState.activityPickerOpen ? " open" : "") + '>' +
         '<summary><span class="check-dropdown-label">' + escapeHtml(selectedActivitiesLabel) + '</span><span class="check-dropdown-caret">▼</span></summary>' +
         '<div class="check-dropdown-menu">' + activityOptions + '</div>' +
         '</details>' +
-        '<div class="field-help">Tick the activities you want to combine. The benchmark below sums the selected activities.</div>' +
-        '</div>' +
+        '<div class="field-help">Tick individual activities or select a whole group such as BOP. The benchmark below sums everything selected.</div>' +
+        '</div>';
+
+      if (!selectedOpportunity) {
+        ui.flatTimeActivityDrilldown.innerHTML =
+          activityDrilldownHtml +
+          '<div class="empty">No activity is selected. Mark one or more flat time activities to build the benchmark. PRE and drilling actions D, DMR, and DMS are excluded here.</div>';
+      } else {
+        const peerRows = selectedOpportunity.ranked
+          .slice()
+          .sort((left, right) => right.value - left.value || left.label.localeCompare(right.label))
+          .map((entry) => ({
+            rigLabel: entry.rigLabel || "Rig not mapped",
+            label: entry.label,
+            value: entry.value,
+            gap: Math.max(entry.value - selectedOpportunity.idealTime, 0),
+          }));
+
+        activityDrilldownHtml +=
         '<div class="metric-strip" style="margin-bottom:14px;">' +
         '<div class="metric-pill"><div class="label">Selected Activities</div><div class="value"><span class="value-main">' + escapeHtml(String(selectedOpportunity.labelCount)) + '</span><span class="value-suffix">' + escapeHtml(selectedOpportunity.labelCount === 1 ? "activity" : "activities") + '</span></div><div class="meta">' + selectedOpportunity.activityLabels.map((label) => flatTimeActivityLabelHtml(label)).join("<br>") + '</div></div>' +
-        '<div class="metric-pill"><div class="label">Recommended Ideal</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(selectedOpportunity.idealTime)) + '</span><span class="value-suffix">' + escapeHtml("hr / " + formatNumber(selectedOpportunity.idealTime / 24) + " d") + '</span></div><div class="meta">' + escapeHtml(selectedOpportunity.idealRule) + '</div></div>' +
+        '<div class="metric-pill"><div class="label">Recommended Ideal</div><div class="value"><span class="value-main">' + escapeHtml(formatHours(selectedOpportunity.idealTime)) + '</span><span class="value-suffix">' + escapeHtml("hr / " + formatDays(selectedOpportunity.idealTime / 24) + " d") + '</span></div><div class="meta">' + escapeHtml(selectedOpportunity.idealRule) + '</div></div>' +
         '<div class="metric-pill"><div class="label">Confidence</div><div class="value">' + confidenceBadgeHtml(selectedOpportunity.confidence) + '</div><div class="meta">' + escapeHtml(selectedOpportunity.variability + " variability • sample " + selectedOpportunity.occurrenceCount) + '</div></div>' +
-        '<div class="metric-pill"><div class="label">Observed Range</div><div class="value"><span class="value-main">' + escapeHtml(formatNumber(selectedOpportunity.fastestTime)) + " - " + escapeHtml(formatNumber(Math.max(...selectedOpportunity.values, 0))) + '</span><span class="value-suffix">' + escapeHtml("hr / " + formatNumber(selectedOpportunity.fastestTime / 24) + " - " + formatNumber(Math.max(...selectedOpportunity.values, 0) / 24) + " d") + '</span></div><div class="meta">Fastest to slowest observed execution</div></div>' +
+        '<div class="metric-pill"><div class="label">Observed Range</div><div class="value"><span class="value-main">' + escapeHtml(formatHours(selectedOpportunity.fastestTime)) + " - " + escapeHtml(formatHours(Math.max(...selectedOpportunity.values, 0))) + '</span><span class="value-suffix">' + escapeHtml("hr / " + formatDays(selectedOpportunity.fastestTime / 24) + " - " + formatDays(Math.max(...selectedOpportunity.values, 0) / 24) + " d") + '</span></div><div class="meta">Fastest to slowest observed execution</div></div>' +
         '</div>' +
         '<div class="table-wrap"><table><thead><tr><th>Rig</th><th>Well</th><th>Observed Time (hr)</th><th>Gap vs Ideal (hr)</th></tr></thead><tbody>' +
         peerRows.map((row) =>
@@ -1285,26 +2028,60 @@
         ).join('') +
         '</tbody></table></div>';
 
+        ui.flatTimeActivityDrilldown.innerHTML = activityDrilldownHtml;
+      }
+
+      const activityPicker = document.getElementById("flat-time-drilldown-activity-picker");
+      if (activityPicker) {
+        Array.from(activityPicker.querySelectorAll(".flat-time-activity-group-check[data-indeterminate='true']")).forEach((input) => {
+          input.indeterminate = true;
+        });
+        activityPicker.addEventListener("toggle", () => {
+          flatTimeState.activityPickerOpen = activityPicker.open;
+        });
+      }
+
+      const collectSelectedFlatTimeActivities = () => Array.from(document.querySelectorAll(".flat-time-activity-check:checked"))
+        .map((input) => input.value)
+        .filter(Boolean);
+
+      Array.from(document.querySelectorAll(".flat-time-activity-group-check")).forEach((groupCheckbox) => {
+        groupCheckbox.addEventListener("change", () => {
+          const groupKey = groupCheckbox.dataset.group || "";
+          const childCheckboxes = Array.from(document.querySelectorAll(".check-tree-children"))
+            .filter((container) => container.dataset.group === groupKey)
+            .flatMap((container) => Array.from(container.querySelectorAll(".flat-time-activity-check")));
+          childCheckboxes.forEach((checkbox) => {
+            checkbox.checked = groupCheckbox.checked;
+          });
+
+          const selected = collectSelectedFlatTimeActivities();
+          flatTimeState.activityPickerOpen = true;
+          flatTimeState.focusActivities = selected;
+          flatTimeState.focusActivity = selected[0] || "";
+          renderFlatTime();
+        });
+      });
+
       Array.from(document.querySelectorAll(".flat-time-activity-check")).forEach((checkbox) => {
         checkbox.addEventListener("change", () => {
-          flatTimeState.focusActivities = Array.from(document.querySelectorAll(".flat-time-activity-check:checked"))
-            .map((input) => input.value)
-            .filter(Boolean);
-          if (!flatTimeState.focusActivities.length && checkbox.value) {
-            flatTimeState.focusActivities = [checkbox.value];
-          }
-          flatTimeState.focusActivity = flatTimeState.focusActivities[0] || "";
+          const selected = collectSelectedFlatTimeActivities();
+          flatTimeState.activityPickerOpen = true;
+          flatTimeState.focusActivities = selected;
+          flatTimeState.focusActivity = selected[0] || "";
           renderFlatTime();
         });
       });
 
       ui.flatTimeDrilldownNote.textContent =
-        'Selected well: ' + selectedDataset.subjectWell + ' • selected activities: ' + selectedOpportunity.activityLabels.join(", ") + '. ' +
-        'Headline well totals are now calculated from all activities in the selected filter context, while the list below keeps only the top loss drivers. ' +
+        'Selected well: ' + selectedDataset.subjectWell + ' • selected activities: ' + ((selectedOpportunity && selectedOpportunity.activityLabels.length) ? selectedOpportunity.activityLabels.join(", ") : "none") + '. ' +
+        'This explorer is using flat time only, excluding PRE plus drilling actions D, DMR, and DMS. ' +
+        'Use the selectors in this explorer to move across wells, sections, and activity sets while reviewing the benchmark and ideal-time logic. ' +
         'Depth-based drill-down is still limited because the uploaded CSVs do not contain true depth fields such as section top/bottom, measured depth or TD.';
     }
 
-    function renderParetoChart(target, opportunities) {
+    function renderParetoChart(target, opportunities, valueKey = "totalRecoverableHours") {
+      if (!target) return;
       if (!opportunities.length) {
         target.innerHTML = '<div class="empty">No recoverable-hour opportunities available.</div>';
         return;
@@ -1312,16 +2089,21 @@
 
       const items = opportunities
         .slice()
-        .sort((left, right) => right.totalRecoverableHours - left.totalRecoverableHours)
+        .sort((left, right) => Number(right[valueKey] || 0) - Number(left[valueKey] || 0))
+        .filter((item) => Number(item[valueKey] || 0) > 0)
         .slice(0, 10);
-      const totalRecoverable = items.reduce((sum, item) => sum + item.totalRecoverableHours, 0) || 1;
+      if (!items.length) {
+        target.innerHTML = '<div class="empty">No recoverable-hour opportunities available for the selected well.</div>';
+        return;
+      }
+      const totalRecoverable = items.reduce((sum, item) => sum + Number(item[valueKey] || 0), 0) || 1;
       const chartTheme = getChartTheme();
       const width = Math.max(820, items.length * 120);
       const height = 360;
       const margin = { top: 24, right: 40, bottom: 86, left: 52 };
       const chartWidth = width - margin.left - margin.right;
       const chartHeight = height - margin.top - margin.bottom;
-      const maxBar = niceMax(Math.max(...items.map((item) => item.totalRecoverableHours), 1));
+      const maxBar = niceMax(Math.max(...items.map((item) => Number(item[valueKey] || 0)), 1));
       const groupWidth = chartWidth / items.length;
       let cumulative = 0;
       const points = [];
@@ -1332,7 +2114,7 @@
         return (
           '<g>' +
           '<line x1="' + margin.left + '" y1="' + y.toFixed(2) + '" x2="' + (width - margin.right) + '" y2="' + y.toFixed(2) + '" stroke="' + chartTheme.grid + '" stroke-dasharray="4 5"></line>' +
-          '<text x="' + (margin.left - 10) + '" y="' + (y + 4).toFixed(2) + '" text-anchor="end" font-size="11" fill="' + chartTheme.valueLabel + '">' + escapeHtml(formatNumber(value)) + "</text>" +
+          '<text x="' + (margin.left - 10) + '" y="' + (y + 4).toFixed(2) + '" text-anchor="end" font-size="11" fill="' + chartTheme.valueLabel + '">' + escapeHtml(formatHours(value)) + "</text>" +
           "</g>"
         );
       }).join("");
@@ -1340,9 +2122,10 @@
       const bars = items.map((item, index) => {
         const x = margin.left + index * groupWidth + groupWidth * 0.18;
         const barWidth = groupWidth * 0.64;
-        const barHeight = (item.totalRecoverableHours / maxBar) * chartHeight;
+        const itemValue = Number(item[valueKey] || 0);
+        const barHeight = (itemValue / maxBar) * chartHeight;
         const y = margin.top + chartHeight - barHeight;
-        cumulative += item.totalRecoverableHours;
+        cumulative += itemValue;
         const cumulativePct = (cumulative / totalRecoverable) * 100;
         const pointX = x + barWidth / 2;
         const pointY = margin.top + chartHeight - (cumulativePct / 100) * chartHeight;
@@ -1354,7 +2137,7 @@
         return (
           '<g>' +
           '<rect x="' + x.toFixed(2) + '" y="' + y.toFixed(2) + '" width="' + barWidth.toFixed(2) + '" height="' + Math.max(barHeight, 2).toFixed(2) + '" rx="10" fill="#1264d6"></rect>' +
-          '<text x="' + pointX.toFixed(2) + '" y="' + Math.max(margin.top + 12, y - 8).toFixed(2) + '" text-anchor="middle" font-size="11" font-weight="700" fill="' + chartTheme.pointLabel + '">' + escapeHtml(formatNumber(item.totalRecoverableHours)) + "</text>" +
+          '<text x="' + pointX.toFixed(2) + '" y="' + Math.max(margin.top + 12, y - 8).toFixed(2) + '" text-anchor="middle" font-size="11" font-weight="700" fill="' + chartTheme.pointLabel + '">' + escapeHtml(formatHours(itemValue)) + "</text>" +
           '<text x="' + pointX.toFixed(2) + '" y="' + (height - 42) + '" text-anchor="middle" font-size="11" font-weight="700" fill="' + chartTheme.text + '">' + labelSvg + "</text>" +
           "</g>"
         );
@@ -1415,8 +2198,8 @@
           const bg = value > 0 ? 'rgba(200, 30, 90, ' + opacity.toFixed(2) + ')' : 'rgba(18, 100, 214, 0.06)';
           const color = value > 0.01 ? '#ffffff' : 'var(--ink)';
           const modeLabel = heatmapMode === "actual" ? "Actual hours" : "Gap vs ideal";
-          const tooltip = modeLabel + ': ' + formatNumber(value) + ' hr' + ' | Actual: ' + formatNumber(actual) + ' hr | Ideal: ' + formatNumber(opportunity.idealTime) + ' hr';
-          return '<td title="' + escapeHtml(tooltip) + '" style="background:' + bg + '; color:' + color + '; font-weight:700; text-align:center;">' + escapeHtml(formatNumber(value)) + '</td>';
+          const tooltip = modeLabel + ': ' + formatHours(value) + ' hr' + ' | Actual: ' + formatHours(actual) + ' hr | Ideal: ' + formatHours(opportunity.idealTime) + ' hr';
+          return '<td title="' + escapeHtml(tooltip) + '" style="background:' + bg + '; color:' + color + '; font-weight:700; text-align:center;">' + escapeHtml(formatHours(value)) + '</td>';
         }).join("");
         return '<tr><td><strong>' + escapeHtml(dataset.subjectWell) + '</strong><br><span style="color:var(--muted); font-size:12px;">' + escapeHtml(dataset.rigLabel || '') + '</span></td>' + cells + '</tr>';
       }).join("");
@@ -1452,6 +2235,7 @@
     }
 
     function renderFlatTimeSummary(datasets, metricKey, totalKey, activityItems, groupItems) {
+      if (!ui.flatTimeSummary) return;
       if (!datasets.length) {
         ui.flatTimeSummary.innerHTML = '<div class="empty">Upload flat time CSV files to start the comparison.</div>';
         return;
@@ -1482,27 +2266,27 @@
 
       const cards = [
         { label: "Benchmarks Compared", value: String(datasets.length), meta: datasets.map((dataset) => dataset.subjectWell).join(", ") },
-        { label: "Top Consuming Activity", value: topActivity ? topActivity.label : "N/A", valueHtml: topActivity ? flatTimeActivityLabelHtml(topActivity.label) : escapeHtml("N/A"), meta: topActivity ? formatNumber(topActivity.total) + " hr total" : "No activity data" },
-        { label: "Largest Group", value: topGroup ? topGroup.label : "N/A", meta: topGroup ? formatNumber(topGroup.total) + " hr total" : "No group data" },
-        { label: "Highest Burden Well", value: highestDataset ? highestDataset.label : "N/A", meta: highestDataset ? (highestDataset.rigLabel + " • " + formatNumber(highestDataset.value) + " hr total") : "No dataset totals" },
+        { label: "Top Consuming Activity", value: topActivity ? topActivity.label : "N/A", valueHtml: topActivity ? flatTimeActivityLabelHtml(topActivity.label) : escapeHtml("N/A"), meta: topActivity ? formatHours(topActivity.total) + " hr total" : "No activity data" },
+        { label: "Largest Group", value: topGroup ? topGroup.label : "N/A", meta: topGroup ? formatHours(topGroup.total) + " hr total" : "No group data" },
+        { label: "Highest Burden Well", value: highestDataset ? highestDataset.label : "N/A", meta: highestDataset ? (highestDataset.rigLabel + " • " + formatHours(highestDataset.value) + " hr total") : "No dataset totals" },
         {
           label: "Best Reduction Opportunity",
           value: topSpread ? topSpread.topEntry.rigLabel : "N/A",
-          meta: topSpread ? (topSpread.topEntry.label + " • " + topSpread.activityLabel + " • gap " + formatNumber(topSpread.gapToIdeal) + " hr vs ideal") : "Need more than one dataset",
-          metaHtml: topSpread ? (escapeHtml(topSpread.topEntry.label + " • ") + flatTimeActivityLabelHtml(topSpread.activityLabel) + escapeHtml(" • gap " + formatNumber(topSpread.gapToIdeal) + " hr vs ideal")) : escapeHtml("Need more than one dataset"),
+          meta: topSpread ? (topSpread.topEntry.label + " • " + topSpread.activityLabel + " • gap " + formatHours(topSpread.gapToIdeal) + " hr vs ideal") : "Need more than one dataset",
+          metaHtml: topSpread ? (escapeHtml(topSpread.topEntry.label + " • ") + flatTimeActivityLabelHtml(topSpread.activityLabel) + escapeHtml(" • gap " + formatHours(topSpread.gapToIdeal) + " hr vs ideal")) : escapeHtml("Need more than one dataset"),
         },
         {
           label: "Total Recoverable Hours",
-          value: formatNumber(totalRecoverable),
+          value: formatHours(totalRecoverable),
           meta: "Sum of time above the recommended ideal across the comparison set",
         },
         {
           label: "Most Reliable Ideal",
           value: mostReliableIdeal ? mostReliableIdeal.activityLabel : "N/A",
           valueHtml: mostReliableIdeal ? flatTimeActivityLabelHtml(mostReliableIdeal.activityLabel) : escapeHtml("N/A"),
-          meta: mostReliableIdeal ? (mostReliableIdeal.confidence + " confidence • target " + formatNumber(mostReliableIdeal.idealTime) + " hr") : "Need at least 3 wells for a strong benchmark",
+          meta: mostReliableIdeal ? (mostReliableIdeal.confidence + " confidence • target " + formatHours(mostReliableIdeal.idealTime) + " hr") : "Need at least 3 wells for a strong benchmark",
         },
-        { label: "Total Compared Time", value: formatNumber(overallHours), meta: metricKey === "subjectHours" ? "Subject well hours" : metricKey === "meanHours" ? "Mean hours" : "Median hours" },
+        { label: "Total Compared Time", value: formatHours(overallHours), meta: metricKey === "subjectHours" ? "Subject well hours" : metricKey === "meanHours" ? "Mean hours" : "Median hours" },
       ];
 
       ui.flatTimeSummary.innerHTML = cards
@@ -1514,6 +2298,812 @@
           "</div>"
         ))
         .join("");
+    }
+
+    function flatTimeAiScopeLabel(scope) {
+      if (scope === "selected-well-section") return "Selected well + section";
+      if (scope === "selected-activities") return "Selected activities";
+      if (scope === "current-scope") return "Current filtered comparison set";
+      return "Selected well";
+    }
+
+    function setFlatTimeAiOutput(message, isError = false) {
+      if (!ui.flatTimeAiOutput) return;
+      ui.flatTimeAiOutput.classList.toggle("empty", !message);
+      ui.flatTimeAiOutput.classList.toggle("is-error", isError);
+      ui.flatTimeAiOutput.innerHTML = message
+        ? message
+        : "Generate a report to see the report summary here.";
+    }
+
+    function setFlatTimeAiBusyState(isBusy) {
+      flatTimeState.aiBusy = Boolean(isBusy);
+      if (!ui.flatTimeAiGenerate) return;
+      ui.flatTimeAiGenerate.disabled = flatTimeState.aiBusy || !flatTimeState.aiContext;
+      ui.flatTimeAiGenerate.textContent = flatTimeState.aiBusy ? "Generating..." : "Generate Report";
+      if (ui.flatTimeAiExport) {
+        ui.flatTimeAiExport.disabled = flatTimeState.aiBusy || !flatTimeState.aiReportText;
+      }
+    }
+
+    function buildFlatTimeAiContext(
+      datasets,
+      selectedDataset,
+      selectedWell,
+      selectedRig,
+      selectedSectionSize,
+      selectedActivities,
+      selectedOpportunity,
+      metricKey,
+      totalKey,
+      wellRanking,
+      sectionSavingsRows,
+      selectedWellSectionItems,
+      rigBenchmarkRows,
+      opportunityPipeline,
+      allOpportunities
+    ) {
+      const reportOpportunities = (allOpportunities || []).filter((opportunity) => {
+        const activityLabel = String(opportunity?.activityLabel || "");
+        const parts = extractFlatTimeComparisonParts(activityLabel, opportunity?.groupLabel);
+        if (parts.phase === "PRE") return false;
+        if (isFlatTimeDrillingAction(parts.action)) return false;
+        return true;
+      });
+      const reportSelectedLabels = Array.from(
+        new Set(
+          (selectedActivities || []).filter((label) =>
+            reportOpportunities.some((opportunity) => opportunity.activityLabel === label)
+          )
+        )
+      );
+      const reportSelectedOpportunity = reportSelectedLabels.length
+        ? buildSelectedActivityAggregate(reportOpportunities, reportSelectedLabels)
+        : null;
+      const reportWellRanking = buildWellRanking(datasets, reportOpportunities);
+      const selectedWellRanking = reportWellRanking.find((row) => row.wellLabel === selectedWell) || null;
+      const reportBreakdownMap = buildSectionBreakdownMap(datasets, reportOpportunities, metricKey);
+      const reportSelectedWellSectionItems = buildSelectedWellSectionItems(datasets, selectedDataset, reportBreakdownMap);
+      const reportSectionSavingsRows = buildSectionSavingsSummary(datasets, reportBreakdownMap);
+      const comparisonSet = datasets.map((dataset) => {
+        const ranking = reportWellRanking.find((row) => row.wellLabel === dataset.subjectWell);
+        return {
+          rig: dataset.rigLabel || "Rig not mapped",
+          well: dataset.subjectWell,
+          totalHours: Number(ranking ? ranking.actualTotal : 0),
+        };
+      });
+      const summaryOpportunities = reportOpportunities
+        .slice(0, 8)
+        .map((item) => ({
+          section: formatFlatTimeSectionSize(item.sectionSize),
+          group: item.groupLabel,
+          activity: item.activityLabel,
+          idealHours: Number(item.idealTime || 0),
+          recoverableHours: Number(item.totalRecoverableHours || 0),
+          confidence: item.confidence,
+          highestWell: item.topEntry.label || "N/A",
+          highestRig: item.topEntry.rigLabel || "Rig not mapped",
+        }));
+
+      return {
+        sourceFile: dashboardData.meta.sourceFile || "Unknown source",
+        generatedAt: dashboardData.meta.generatedAt || "",
+        reportAgent: dashboardData.meta.weeklyReportAgent || "WeeklyReport",
+        currentSelection: {
+          rig: selectedRig || "All rigs",
+          sectionSize: selectedSectionSize ? formatFlatTimeSectionSize(selectedSectionSize) : "All section sizes",
+          metric: metricKey === "subjectHours" ? "Subject Well Time" : metricKey === "meanHours" ? "Mean Time" : "Median Time",
+          selectedWell: selectedWell || "",
+          selectedActivities: reportSelectedLabels,
+          analysisMode: ui.flatTimeMode ? ui.flatTimeMode.value : "executive",
+        },
+        comparisonSet: {
+          datasetsLoaded: datasets.length,
+          wells: comparisonSet,
+        },
+        summary: {
+          totalComparedHours: comparisonSet.reduce((sum, item) => sum + Number(item.totalHours || 0), 0),
+          totalRecoverableHours: reportSectionSavingsRows.reduce((sum, item) => sum + Number(item.recoverableHours || 0), 0),
+          highestBurdenWell: selectedWellRanking
+            ? {
+                rig: selectedWellRanking.rigLabel,
+                well: selectedWellRanking.wellLabel,
+                actualHours: selectedWellRanking.actualTotal,
+                idealHours: selectedWellRanking.idealTotal,
+                excessHours: selectedWellRanking.excessTotal,
+              }
+            : null,
+        },
+        selectedWell: selectedDataset
+          ? {
+              rig: selectedDataset.rigLabel || "Rig not mapped",
+              well: selectedDataset.subjectWell,
+              actualHours: selectedWellRanking ? selectedWellRanking.actualTotal : Number(selectedDataset[totalKey] || 0),
+              idealHours: selectedWellRanking ? selectedWellRanking.idealTotal : 0,
+              excessHours: selectedWellRanking ? selectedWellRanking.excessTotal : 0,
+              sections: reportSelectedWellSectionItems.map((item) => ({
+                section: item.label,
+                actualHours: item.actualTotal,
+                idealHours: item.idealTotal,
+                gapHours: item.gapTotal,
+                offsetAverageHours: item.offsetAverage,
+                bestOffsetHours: item.bestOffset,
+                bestOffsetWell: item.bestOffsetWell,
+                bestOffsetRig: item.bestOffsetRig,
+                topDrivers: (item.topGapActivities && item.topGapActivities.length ? item.topGapActivities : item.topActivities).map((activity) => ({
+                  activity: activity.activityLabel,
+                  actualHours: activity.actual,
+                  idealHours: activity.ideal,
+                  gapHours: activity.gap,
+                  confidence: activity.confidence,
+                })).filter((activity) => Number(activity.gapHours || 0) > 0 || !item.topGapActivities || !item.topGapActivities.length),
+              })),
+            }
+          : null,
+        selectedActivities: reportSelectedOpportunity
+          ? {
+              labels: reportSelectedOpportunity.activityLabels,
+              section: reportSelectedOpportunity.sectionLabel,
+              group: reportSelectedOpportunity.groupLabel,
+              selectedWellHours: Number(reportSelectedOpportunity.ranked.find((entry) => entry.label === selectedWell)?.value || 0),
+              idealHours: reportSelectedOpportunity.idealTime,
+              gapHours: Math.max(Number(reportSelectedOpportunity.ranked.find((entry) => entry.label === selectedWell)?.value || 0) - Number(reportSelectedOpportunity.idealTime || 0), 0),
+              peerAverageHours: reportSelectedOpportunity.peerAverage,
+              occurrenceCount: reportSelectedOpportunity.occurrenceCount,
+              confidence: reportSelectedOpportunity.confidence,
+              highestWell: reportSelectedOpportunity.topEntry.label,
+              highestRig: reportSelectedOpportunity.topEntry.rigLabel,
+              highestObservedHours: reportSelectedOpportunity.topEntry.value,
+            }
+          : null,
+          topWells: reportWellRanking.slice(0, 5).map((row) => ({
+          rig: row.rigLabel,
+          well: row.wellLabel,
+          actualHours: row.actualTotal,
+          idealHours: row.idealTotal,
+          excessHours: row.excessTotal,
+          topDrivers: row.topDrivers.map((driver) => ({
+            activity: driver.activity,
+            group: driver.group,
+            gapHours: driver.gap,
+          })),
+          otherDriversGapHours: row.otherDriversGap,
+        })),
+        savingsBySection: reportSectionSavingsRows.slice(0, 6).map((row) => ({
+          section: row.sectionLabel,
+          recoverableHours: row.recoverableHours,
+          recoverableDays: row.recoverableDays,
+          impactedWells: row.impactedWells,
+          topActivity: row.topActivity,
+          confidence: row.confidence,
+          recommendation: row.recommendation,
+        })),
+        rigBenchmark: rigBenchmarkRows.slice(0, 6).map((row) => ({
+          rig: row.rigLabel,
+          wells: row.wellCount,
+          averageFlatTimeHours: row.averageFlatTime,
+          idealFlatTimeHours: row.averageIdealTime,
+          excessHours: row.excessTime,
+          mainRepeatingActivity: row.mainRepeatingActivity,
+        })),
+        opportunityPipeline: opportunityPipeline.slice(0, 8).map((row) => ({
+          activity: row.activityLabel,
+          group: row.groupLabel,
+          section: formatFlatTimeSectionSize(row.sectionSize),
+          occurrences: row.occurrenceCount,
+          wellsImpacted: row.wellsImpacted,
+          idealHours: row.idealTime,
+          recoverableHours: row.totalRecoverableHours,
+          priority: row.priority,
+        })),
+        topActivities: summaryOpportunities,
+      };
+    }
+
+    function flatTimeHoursWithDaysNarrative(hours) {
+      return formatHours(hours) + " hr (" + formatDays((hours || 0) / 24) + " d)";
+    }
+
+    function flatTimeSentenceList(items) {
+      const cleaned = (items || []).filter(Boolean);
+      if (!cleaned.length) return "";
+      if (cleaned.length === 1) return cleaned[0];
+      if (cleaned.length === 2) return cleaned[0] + " and " + cleaned[1];
+      return cleaned.slice(0, -1).join(", ") + ", and " + cleaned[cleaned.length - 1];
+    }
+
+    function buildFlatTimeScopeInsights(aiContext, scope) {
+      const selectedWell = aiContext.selectedWell || null;
+      const selectedActivities = aiContext.selectedActivities || null;
+      const selectedWellSections = selectedWell && Array.isArray(selectedWell.sections) ? selectedWell.sections.slice() : [];
+      const selectedSection = selectedWellSections.find((section) => section.section === aiContext.currentSelection.sectionSize) || null;
+      const topSelectedSection = selectedWellSections
+        .slice()
+        .sort((left, right) => Number(right.gapHours || 0) - Number(left.gapHours || 0) || Number(right.actualHours || 0) - Number(left.actualHours || 0))[0] || null;
+      const topSelectedActivity = selectedWellSections
+        .flatMap((section) => (section.topDrivers || []).map((driver) => ({ ...driver, section: section.section })))
+        .sort((left, right) => Number(right.gapHours || 0) - Number(left.gapHours || 0) || Number(right.actualHours || 0) - Number(left.actualHours || 0))[0] || null;
+      const topScopeSection = (aiContext.savingsBySection || [])[0] || null;
+      const topScopeActivity = (aiContext.topActivities || [])[0] || null;
+
+      if (scope === "selected-activities" && selectedActivities) {
+        return {
+          recoverableHours: Number(selectedActivities.gapHours || 0),
+          recoverableMeta: flatTimeHoursWithDaysNarrative(selectedActivities.gapHours || 0) + " for the selected activity set in the selected well",
+          topSectionLabel: selectedActivities.section || "N/A",
+          topSectionHours: Number(selectedActivities.gapHours || 0),
+          topSectionMeta: selectedActivities.section
+            ? "Selected activity set belongs to " + selectedActivities.section + " and carries " + flatTimeHoursWithDaysNarrative(selectedActivities.gapHours || 0) + " of excess time."
+            : "No section mapping was found for the selected activities.",
+          topActivityLabel: selectedActivities.labels && selectedActivities.labels.length === 1
+            ? selectedActivities.labels[0]
+            : String((selectedActivities.labels || []).length) + " selected activities",
+          topActivityValueHtml: selectedActivities.labels && selectedActivities.labels.length === 1
+            ? flatTimeActivityLabelHtml(selectedActivities.labels[0])
+            : escapeHtml(String((selectedActivities.labels || []).length) + " selected activities"),
+          topActivityHours: Number(selectedActivities.gapHours || 0),
+          topActivityMeta: flatTimeHoursWithDaysNarrative(selectedActivities.gapHours || 0) + " above ideal • " + (selectedActivities.group || "Combined job"),
+          headlineSection: selectedActivities.section || "",
+          headlineActivity: selectedActivities.labels && selectedActivities.labels.length ? selectedActivities.labels[0] : "",
+        };
+      }
+
+      if (scope === "selected-well-section" && selectedSection) {
+        const topSectionDriver = (selectedSection.topDrivers || [])
+          .slice()
+          .sort((left, right) => Number(right.gapHours || 0) - Number(left.gapHours || 0))[0] || null;
+        return {
+          recoverableHours: Number(selectedSection.gapHours || 0),
+          recoverableMeta: flatTimeHoursWithDaysNarrative(selectedSection.gapHours || 0) + " in the selected section of the selected well",
+          topSectionLabel: selectedSection.section,
+          topSectionHours: Number(selectedSection.gapHours || 0),
+          topSectionMeta: flatTimeHoursWithDaysNarrative(selectedSection.actualHours || 0) + " actual vs " + flatTimeHoursWithDaysNarrative(selectedSection.idealHours || 0) + " ideal",
+          topActivityLabel: topSectionDriver ? topSectionDriver.activity : "N/A",
+          topActivityValueHtml: topSectionDriver ? flatTimeActivityLabelHtml(topSectionDriver.activity) : escapeHtml("N/A"),
+          topActivityHours: Number(topSectionDriver ? topSectionDriver.gapHours || 0 : 0),
+          topActivityMeta: topSectionDriver
+            ? flatTimeHoursWithDaysNarrative(topSectionDriver.gapHours || 0) + " above ideal • " + selectedSection.section
+            : "No excess activity found in this section",
+          headlineSection: selectedSection.section,
+          headlineActivity: topSectionDriver ? topSectionDriver.activity : "",
+        };
+      }
+
+      if (scope === "selected-well" && selectedWell) {
+        return {
+          recoverableHours: Number(selectedWell.excessHours || 0),
+          recoverableMeta: flatTimeHoursWithDaysNarrative(selectedWell.excessHours || 0) + " across the selected well",
+          topSectionLabel: topSelectedSection ? topSelectedSection.section : "N/A",
+          topSectionHours: Number(topSelectedSection ? topSelectedSection.gapHours || 0 : 0),
+          topSectionMeta: topSelectedSection
+            ? flatTimeHoursWithDaysNarrative(topSelectedSection.gapHours || 0) + " recoverable in the selected well"
+            : "No section gap found in the selected well",
+          topActivityLabel: topSelectedActivity ? topSelectedActivity.activity : "N/A",
+          topActivityValueHtml: topSelectedActivity ? flatTimeActivityLabelHtml(topSelectedActivity.activity) : escapeHtml("N/A"),
+          topActivityHours: Number(topSelectedActivity ? topSelectedActivity.gapHours || 0 : 0),
+          topActivityMeta: topSelectedActivity
+            ? flatTimeHoursWithDaysNarrative(topSelectedActivity.gapHours || 0) + " above ideal • " + topSelectedActivity.section
+            : "No recurring activity found in the selected well",
+          headlineSection: topSelectedSection ? topSelectedSection.section : "",
+          headlineActivity: topSelectedActivity ? topSelectedActivity.activity : "",
+        };
+      }
+
+      return {
+        recoverableHours: Number(aiContext.summary.totalRecoverableHours || 0),
+        recoverableMeta: flatTimeHoursWithDaysNarrative(aiContext.summary.totalRecoverableHours || 0) + " across current scope",
+        topSectionLabel: topScopeSection ? topScopeSection.section : "N/A",
+        topSectionHours: Number(topScopeSection ? topScopeSection.recoverableHours || 0 : 0),
+        topSectionMeta: topScopeSection
+          ? flatTimeHoursWithDaysNarrative(topScopeSection.recoverableHours || 0) + " across " + topScopeSection.impactedWells + " well(s)"
+          : "No section savings identified",
+        topActivityLabel: topScopeActivity ? topScopeActivity.activity : "N/A",
+        topActivityValueHtml: topScopeActivity ? flatTimeActivityLabelHtml(topScopeActivity.activity) : escapeHtml("N/A"),
+        topActivityHours: Number(topScopeActivity ? topScopeActivity.recoverableHours || 0 : 0),
+        topActivityMeta: topScopeActivity
+          ? flatTimeHoursWithDaysNarrative(topScopeActivity.recoverableHours || 0) + " recoverable • " + topScopeActivity.group
+          : "No recurring activity found",
+        headlineSection: topScopeSection ? topScopeSection.section : "",
+        headlineActivity: topScopeActivity ? topScopeActivity.activity : "",
+      };
+    }
+
+    function buildFlatTimeStandardReport(aiContext, scope) {
+      if (!aiContext) return "";
+
+      const scopeLabel = flatTimeAiScopeLabel(scope);
+      const selectedWell = aiContext.selectedWell;
+      const selectedActivities = scope === "selected-activities" ? aiContext.selectedActivities : null;
+      const scopeInsights = buildFlatTimeScopeInsights(aiContext, scope);
+      const topSection = scopeInsights.headlineSection
+        ? ((selectedWell && selectedWell.sections || []).find((section) => section.section === scopeInsights.headlineSection) || (aiContext.savingsBySection || []).find((section) => section.section === scopeInsights.headlineSection) || null)
+        : null;
+      const topActivity = scopeInsights.headlineActivity
+        ? ((aiContext.topActivities || []).find((item) => item.activity === scopeInsights.headlineActivity) || null)
+        : null;
+      const topSectionRecoverableHours = Number(
+        scopeInsights.topSectionHours ||
+        topSection?.gapHours ||
+        topSection?.recoverableHours ||
+        0
+      );
+      const topActivityRecoverableHours = Number(
+        scopeInsights.topActivityHours ||
+        selectedActivities?.gapHours ||
+        topActivity?.recoverableHours ||
+        0
+      );
+      const sectionDrivers = selectedWell && Array.isArray(selectedWell.sections)
+        ? selectedWell.sections
+            .slice()
+            .sort((left, right) => Number(right.gapHours || 0) - Number(left.gapHours || 0))
+            .slice(0, 3)
+        : [];
+      const strongestSections = sectionDrivers.map((section) =>
+        section.section + " at " + flatTimeHoursWithDaysNarrative(section.actualHours) +
+        " versus " + flatTimeHoursWithDaysNarrative(section.idealHours) +
+        ", leaving a gap of " + flatTimeHoursWithDaysNarrative(section.gapHours)
+      );
+      const topDriverBullets = sectionDrivers.flatMap((section) =>
+        (section.topDrivers || []).slice(0, 2).map((driver) =>
+          driver.activity + " in the " + section.section + " section contributed " +
+          flatTimeHoursWithDaysNarrative(driver.gapHours || 0) +
+          " above the recommended benchmark."
+        )
+      ).slice(0, 5);
+      const sectionBullets = sectionDrivers.map((section) => {
+        const leadDriver = (section.topDrivers || [])[0];
+        return section.section + " offers " + flatTimeHoursWithDaysNarrative(section.gapHours || 0) +
+          " of recoverable time in the selected well" +
+          (leadDriver ? ", driven mainly by " + leadDriver.activity + "." : ".");
+      });
+      const lines = [
+        "## 1. Executive Summary",
+        "This report evaluates **flat time only** and explicitly excludes the **PRE** phase plus drilling actions **D, DMR, and DMS**.",
+        selectedWell
+          ? "The selected well, **" + selectedWell.well + "** on **" + selectedWell.rig + "**, accumulated **" +
+            flatTimeHoursWithDaysNarrative(selectedWell.actualHours) + "** against a recommended ideal of **" +
+            flatTimeHoursWithDaysNarrative(selectedWell.idealHours) + "**. This leaves a current excess of **" +
+            flatTimeHoursWithDaysNarrative(selectedWell.excessHours) + "** within the selected scope."
+          : "The current filtered comparison set contains **" + aiContext.comparisonSet.datasetsLoaded +
+            "** loaded well(s) with **" + flatTimeHoursWithDaysNarrative(aiContext.summary.totalComparedHours || 0) +
+            "** of compared flat time and **" + flatTimeHoursWithDaysNarrative(aiContext.summary.totalRecoverableHours || 0) +
+            "** of recoverable opportunity.",
+        scopeInsights.headlineSection
+          ? "The current scope highlights **" + scopeInsights.headlineSection + "** as the main section focus, with **" +
+            flatTimeHoursWithDaysNarrative(scopeInsights.topSectionHours || 0) + "** of recoverable time tied to the selected job."
+          : "No dominant recovery section was identified in the current scope.",
+        "",
+        "## 2. Selected Job / Scope",
+        "- **Scope:** " + scopeLabel,
+        "- **Current rig filter:** " + aiContext.currentSelection.rig,
+        "- **Current section filter:** " + aiContext.currentSelection.sectionSize,
+        "- **Flat time basis:** PRE, D, DMR, and DMS are excluded from all report calculations.",
+        "- **Selected well:** " + (aiContext.currentSelection.selectedWell || "Auto-selected from the current scope"),
+        selectedActivities && selectedActivities.labels && selectedActivities.labels.length
+          ? "- **Selected activities:** " + selectedActivities.labels.join(", ")
+          : "- **Selected activities:** No individual activity set was forced.",
+        "",
+        "## 3. Main Findings",
+        selectedActivities && selectedActivities.labels && selectedActivities.labels.length
+          ? "The selected activity set combines **" + selectedActivities.labels.length + "** activity label(s). In the selected well, those activities total **" +
+            flatTimeHoursWithDaysNarrative(selectedActivities.selectedWellHours || 0) + "** against a combined ideal of **" +
+            flatTimeHoursWithDaysNarrative(selectedActivities.idealHours || 0) + "**, leaving **" +
+            flatTimeHoursWithDaysNarrative(selectedActivities.gapHours || 0) + "** of excess time."
+          : "The section-by-section review points to a concentrated loss profile rather than a uniform performance issue across the full well.",
+        ...(strongestSections.length ? strongestSections.map((item) => "- " + item) : ["- No section-specific gap was found in the current scope."]),
+        ...(topDriverBullets.length ? topDriverBullets.map((item) => "- " + item) : []),
+        "",
+        "## 4. Time Recovery Opportunities",
+        topSection
+          ? "The highest value opportunities come from repeating the best validated section performance while removing the main repeating delays in the selected well."
+          : "The current scope does not show a single dominant section, so the opportunity should be managed through the combined activity set.",
+        ...(sectionBullets.length ? sectionBullets.map((item) => "- " + item) : ["- No recoverable section time was identified from the current scope."]),
+        topActivity
+          ? "- The strongest activity-level opportunity is **" + topActivity.activity + "** in **" + topActivity.section +
+            "**, where the selected well still carries **" + flatTimeHoursWithDaysNarrative(topActivityRecoverableHours) +
+            "** of recoverable time."
+          : "",
+      ];
+
+      return lines
+        .filter((line) => line !== null && line !== undefined)
+        .join("\n");
+    }
+
+    function renderFlatTimeAiSummary(aiContext) {
+      if (!ui.flatTimeAiSummary) return;
+      if (!aiContext) {
+        ui.flatTimeAiSummary.innerHTML = '<div class="empty">Report summary metrics will appear here after Flat Time context is available.</div>';
+        return;
+      }
+
+      const scopeInsights = buildFlatTimeScopeInsights(aiContext, ui.flatTimeAiScope ? ui.flatTimeAiScope.value : "selected-well");
+      const selectedWell = aiContext.selectedWell;
+      const cards = [
+        {
+          label: "Report Scope",
+          value: flatTimeAiScopeLabel(ui.flatTimeAiScope ? ui.flatTimeAiScope.value : "selected-well"),
+          meta: aiContext.currentSelection.selectedWell || "Current filtered comparison set",
+        },
+        {
+          label: "Selected Well",
+          value: selectedWell ? selectedWell.well : "N/A",
+          meta: selectedWell ? (selectedWell.rig + " • " + formatHours(selectedWell.actualHours) + " hr flat time actual") : "No well in scope",
+        },
+        {
+          label: "Recoverable Time",
+          value: formatHours(scopeInsights.recoverableHours || 0) + " hr",
+          meta: scopeInsights.recoverableMeta,
+        },
+        {
+          label: "Top Section",
+          value: scopeInsights.topSectionLabel || "N/A",
+          meta: scopeInsights.topSectionMeta,
+        },
+        {
+          label: "Top Activity",
+          value: scopeInsights.topActivityLabel || "N/A",
+          valueHtml: scopeInsights.topActivityValueHtml || escapeHtml(scopeInsights.topActivityLabel || "N/A"),
+          meta: scopeInsights.topActivityMeta,
+        },
+      ];
+
+      ui.flatTimeAiSummary.innerHTML = cards
+        .map((card) => (
+          '<div class="metric-pill">' +
+          '<div class="label">' + escapeHtml(card.label) + "</div>" +
+          '<div class="value"><span class="value-main">' + (card.valueHtml || escapeHtml(card.value)) + '</span></div>' +
+          '<div class="meta">' + escapeHtml(card.meta) + "</div>" +
+          "</div>"
+        ))
+        .join("");
+    }
+
+    function renderFlatTimeAiChart(aiContext) {
+      if (!ui.flatTimeAiChart) return;
+      if (!aiContext) {
+        ui.flatTimeAiChart.innerHTML = '<div class="empty">Snapshot chart will appear here after Flat Time context is available.</div>';
+        return;
+      }
+
+      if (aiContext.selectedWell && Array.isArray(aiContext.selectedWell.sections) && aiContext.selectedWell.sections.length) {
+        renderMultiSeriesChart(
+          ui.flatTimeAiChart,
+          aiContext.selectedWell.sections.map((section) => ({
+            label: section.section,
+            actual: Number(section.actualHours || 0),
+            ideal: Number(section.idealHours || 0),
+            gap: Number(section.gapHours || 0),
+          })),
+          [
+            { key: "actual", label: "Actual", color: "#1264d6", format: (value) => formatHours(value) },
+            { key: "ideal", label: "Ideal", color: "#0f766e", format: (value) => formatHours(value) },
+            { key: "gap", label: "Gap", color: "#c06a0a", format: (value) => formatHours(value) },
+          ],
+          { height: 360, minWidth: 760, groupMinWidth: 150 }
+        );
+        return;
+      }
+
+      if (aiContext.savingsBySection && aiContext.savingsBySection.length) {
+        renderBarChart(
+          ui.flatTimeAiChart,
+          aiContext.savingsBySection.map((row) => ({
+            label: row.section,
+            value: Number(row.recoverableHours || 0),
+          })),
+          "#c81e5a",
+          (value) => formatHours(value) + " hr",
+          { maxItems: 0 }
+        );
+        return;
+      }
+
+      ui.flatTimeAiChart.innerHTML = '<div class="empty">Not enough scoped data to draw the snapshot chart.</div>';
+    }
+
+    function renderFlatTimeAiMarkdown(markdown) {
+      const source = String(markdown || "").replace(/\\n/g, "\n").trim();
+      if (!source) return "";
+
+      const blocks = source
+        .split(/\n\s*\n/)
+        .map((block) => block.trim())
+        .filter(Boolean);
+
+      function inlineFormat(text) {
+        let escaped = escapeHtml(text);
+        escaped = escaped.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+        return escaped;
+      }
+
+      function buildBodyHtml(lines) {
+        const html = [];
+        let paragraphLines = [];
+        let bulletLines = [];
+
+        function flushParagraph() {
+          if (!paragraphLines.length) return;
+          html.push('<p>' + paragraphLines.map((line) => inlineFormat(line)).join("<br>") + "</p>");
+          paragraphLines = [];
+        }
+
+        function flushBullets() {
+          if (!bulletLines.length) return;
+          html.push("<ul>" + bulletLines.map((line) => "<li>" + inlineFormat(line) + "</li>").join("") + "</ul>");
+          bulletLines = [];
+        }
+
+        lines.forEach((line) => {
+          if (/^(\*\s|-\s)/.test(line)) {
+            flushParagraph();
+            bulletLines.push(line.replace(/^(\*\s|-\s)/, ""));
+            return;
+          }
+          flushBullets();
+          paragraphLines.push(line);
+        });
+
+        flushParagraph();
+        flushBullets();
+        return html.join("");
+      }
+
+      return blocks.map((block) => {
+        const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+        if (!lines.length) return "";
+
+        const first = lines[0];
+        if (/^(\*\s|-\s)/.test(first) || lines.every((line) => /^(\*\s|-\s)/.test(line))) {
+          return '<div class="ai-report-section"><ul>' +
+            lines.map((line) => '<li>' + inlineFormat(line.replace(/^(\*\s|-\s)/, "")) + "</li>").join("") +
+            "</ul></div>";
+        }
+
+        if (/^#{1,6}\s+/.test(first) || /^\*\*.+\*\*$/.test(first) || /^\d+\.\s+/.test(first) || /^[A-Z][A-Za-z\s/&-]+:$/.test(first)) {
+          const heading = inlineFormat(first.replace(/^#{1,6}\s+/, "").replace(/^\d+\.\s+/, "").replace(/:$/, ""));
+          const bodyLines = lines.slice(1);
+          const bodyHtml = bodyLines.length ? buildBodyHtml(bodyLines) : "";
+          return '<div class="ai-report-section"><h4>' + heading + "</h4>" + bodyHtml + "</div>";
+        }
+
+        return '<div class="ai-report-section">' + buildBodyHtml(lines) + "</div>";
+      }).join("");
+    }
+
+    function exportFlatTimeAiPdf() {
+      if (!flatTimeState.aiReportText || !ui.flatTimeAiOutput || !ui.flatTimeAiChart) {
+        setFlatTimeAiOutput("Generate the report first, then export it as PDF.", true);
+        return;
+      }
+
+      const title = dashboardData.meta.weeklyReportAgent || "WeeklyReport";
+      const scopeLabel = flatTimeAiScopeLabel(ui.flatTimeAiScope ? ui.flatTimeAiScope.value : "selected-well");
+      const chartHtml = ui.flatTimeAiChart.innerHTML || '<div>No chart available.</div>';
+      const summaryHtml = ui.flatTimeAiSummary ? ui.flatTimeAiSummary.innerHTML : "";
+      const contextHtml = ui.flatTimeAiContext ? ui.flatTimeAiContext.innerHTML : "";
+      const reportHtml = ui.flatTimeAiOutput.innerHTML || "";
+      const sourceFile = dashboardData.meta.sourceFile || "Unknown source";
+      const generatedAt = dashboardData.meta.generatedAt || "";
+      const specificWork = ui.flatTimeAiWork && ui.flatTimeAiWork.value.trim()
+        ? ui.flatTimeAiWork.value.trim()
+        : "Not provided";
+
+      const printHtml = [
+        "<!DOCTYPE html>",
+        '<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">',
+        "<title>WeeklyReport Report PDF</title>",
+        "<style>",
+        "body{margin:0;font-family:'Avenir Next','Segoe UI',sans-serif;color:#102033;background:#f4f7fb;}",
+        ".page{width:min(1100px,calc(100vw - 28px));margin:0 auto;padding:28px 0 40px;}",
+        ".hero{padding:24px 28px;border-radius:28px;background:linear-gradient(135deg,#102033,#1264d6 60%,#0f766e);color:#fff;}",
+        ".hero h1{margin:0 0 10px;font-size:34px;letter-spacing:-0.03em;}",
+        ".hero p{margin:6px 0;color:rgba(255,255,255,0.88);line-height:1.55;}",
+        ".chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;}",
+        ".chip{padding:7px 11px;border-radius:999px;background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.16);color:#fff;font-size:13px;}",
+        ".panel{margin-top:18px;background:#fff;border:1px solid #d8e2ef;border-radius:24px;padding:22px;box-shadow:0 16px 32px rgba(15,23,42,0.08);}",
+        ".panel h2{margin:0 0 10px;font-size:23px;letter-spacing:-0.02em;}",
+        ".panel p.note{margin:0 0 14px;color:#546579;line-height:1.55;}",
+        ".metric-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;}",
+        ".metric-pill{padding:16px;border-radius:18px;background:linear-gradient(180deg,#ffffff,#f8fbff);border:1px solid #d8e2ef;}",
+        ".metric-pill .label{font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:#607085;margin-bottom:8px;}",
+        ".metric-pill .value{font-size:24px;font-weight:800;line-height:1.08;color:#102033;margin-bottom:8px;}",
+        ".metric-pill .meta{font-size:13px;color:#546579;line-height:1.45;}",
+        ".chart-box{padding:14px;border-radius:18px;background:linear-gradient(180deg,#ffffff,#f8fbff);border:1px solid #d8e2ef;overflow:hidden;}",
+        ".chart-box svg{width:100%;height:auto;display:block;}",
+        ".ai-report-section{padding:14px 16px;border-radius:16px;border:1px solid rgba(18,100,214,0.10);background:rgba(18,100,214,0.03);margin-bottom:12px;}",
+        ".ai-report-section:last-child{margin-bottom:0;}",
+        ".ai-report-section h4{margin:0 0 10px;font-size:17px;color:#102033;}",
+        ".ai-report-section p{margin:0 0 12px;line-height:1.65;color:#102033;}",
+        ".ai-report-section ul{margin:0 0 14px;padding-left:22px;}",
+        ".ai-report-section li{margin:0 0 8px;line-height:1.6;color:#102033;}",
+        ".ai-report-section strong{color:#102033;}",
+        "@page{size:A4 portrait;margin:12mm;}",
+        "@media print{body{background:#fff}.page{width:100%;padding:0}.panel,.hero,.metric-pill,.chart-box,.ai-report-section{box-shadow:none !important;break-inside:avoid;page-break-inside:avoid;}}",
+        "</style></head><body>",
+        '<div class="page">',
+        '<section class="hero">' +
+          '<h1>' + escapeHtml(title) + " Report</h1>" +
+          '<p><strong>Scope:</strong> ' + escapeHtml(scopeLabel) + "</p>" +
+          '<p><strong>Specific Work:</strong> ' + escapeHtml(specificWork) + "</p>" +
+          '<p><strong>Source File:</strong> ' + escapeHtml(sourceFile) + "<br><strong>Generated At:</strong> " + escapeHtml(generatedAt) + "</p>" +
+          '<div class="chips">' + contextHtml + "</div>" +
+        "</section>",
+        '<section class="panel"><h2>Opportunity Summary</h2><p class="note">Key metrics and context used to generate this report.</p><div class="metric-strip">' + summaryHtml + "</div></section>",
+        '<section class="panel"><h2>Opportunity Snapshot</h2><p class="note">Visual comparison from the same Flat Time scope used by the report summary.</p><div class="chart-box">' + chartHtml + "</div></section>",
+        '<section class="panel"><h2>Written Report</h2><p class="note">English narrative generated from the scoped Flat Time benchmark context.</p>' + reportHtml + "</section>",
+        "</div>",
+        "<script>window.onload=function(){setTimeout(function(){window.print();},120);};<\\/script>",
+        "</body></html>",
+      ].join("");
+
+      const existingFrame = document.getElementById("flat-time-ai-print-frame");
+      if (existingFrame) {
+        existingFrame.remove();
+      }
+
+      const printFrame = document.createElement("iframe");
+      printFrame.id = "flat-time-ai-print-frame";
+      printFrame.setAttribute("aria-hidden", "true");
+      printFrame.style.position = "fixed";
+      printFrame.style.right = "0";
+      printFrame.style.bottom = "0";
+      printFrame.style.width = "0";
+      printFrame.style.height = "0";
+      printFrame.style.border = "0";
+      printFrame.style.opacity = "0";
+      printFrame.style.pointerEvents = "none";
+
+      const cleanup = () => {
+        window.setTimeout(() => {
+          if (printFrame.parentNode) {
+            printFrame.remove();
+          }
+        }, 1200);
+      };
+
+      printFrame.onload = () => {
+        try {
+          const frameWindow = printFrame.contentWindow;
+          if (!frameWindow) {
+            setFlatTimeAiOutput("Could not prepare the PDF preview. Please try again.", true);
+            cleanup();
+            return;
+          }
+          frameWindow.focus();
+          if ("onafterprint" in frameWindow) {
+            frameWindow.onafterprint = cleanup;
+          } else {
+            cleanup();
+          }
+          window.setTimeout(() => {
+            try {
+              frameWindow.print();
+            } catch (error) {
+              setFlatTimeAiOutput("Could not start the PDF export. Please try again.", true);
+              cleanup();
+            }
+          }, 160);
+        } catch (error) {
+          setFlatTimeAiOutput("Could not prepare the PDF preview. Please try again.", true);
+          cleanup();
+        }
+      };
+
+      document.body.appendChild(printFrame);
+      const frameDocument = printFrame.contentDocument || (printFrame.contentWindow && printFrame.contentWindow.document);
+      if (!frameDocument) {
+        setFlatTimeAiOutput("Could not prepare the PDF document. Please try again.", true);
+        cleanup();
+        return;
+      }
+      frameDocument.open();
+      frameDocument.write(printHtml);
+      frameDocument.close();
+    }
+
+    function renderFlatTimeAiPanel(aiContext) {
+      if (!ui.flatTimeAiHeading || !ui.flatTimeAiStatus || !ui.flatTimeAiContext) return;
+
+      ui.flatTimeAiHeading.textContent = "Report Analysis";
+      ui.flatTimeAiStatus.textContent = "Standard report";
+      if (ui.flatTimeAiNote) {
+        ui.flatTimeAiNote.textContent = "";
+      }
+
+      if (!aiContext) {
+        ui.flatTimeAiContext.innerHTML = '<span class="chip">No Flat Time benchmark context available yet.</span>';
+        renderFlatTimeAiSummary(null);
+        renderFlatTimeAiChart(null);
+        if (!flatTimeState.aiReportText) {
+          setFlatTimeAiOutput("Load Flat Time CSV files to generate a report summary for the selected job or benchmark scope.");
+        }
+        setFlatTimeAiBusyState(false);
+        return;
+      }
+
+      const chips = [
+        "Scope: " + flatTimeAiScopeLabel(ui.flatTimeAiScope ? ui.flatTimeAiScope.value : "selected-well"),
+        "Selected well: " + (aiContext.currentSelection.selectedWell || "Auto"),
+        "Section: " + aiContext.currentSelection.sectionSize,
+        "Benchmarks: " + aiContext.comparisonSet.datasetsLoaded,
+      ];
+      if ((ui.flatTimeAiScope ? ui.flatTimeAiScope.value : "selected-well") === "selected-activities" && aiContext.selectedActivities && aiContext.selectedActivities.labels.length) {
+        chips.push("Activities: " + aiContext.selectedActivities.labels.length);
+      }
+      if (ui.flatTimeAiWork && ui.flatTimeAiWork.value.trim()) {
+        chips.push("Focus: " + ui.flatTimeAiWork.value.trim());
+      }
+      ui.flatTimeAiContext.innerHTML = chips.map((item) => '<span class="chip">' + escapeHtml(item) + '</span>').join("");
+      renderFlatTimeAiSummary(aiContext);
+      renderFlatTimeAiChart(aiContext);
+
+      if (flatTimeState.aiReportText) {
+        setFlatTimeAiOutput(renderFlatTimeAiMarkdown(flatTimeState.aiReportText), false);
+      } else {
+        setFlatTimeAiOutput("Click Generate Report to produce a narrative for the current Flat Time scope.");
+      }
+      setFlatTimeAiBusyState(false);
+    }
+
+    async function requestFlatTimeAdvancedReport() {
+      if (!flatTimeState.aiContext) {
+        setFlatTimeAiOutput("Flat Time context is not ready yet. Load CSV files and try again.", true);
+        return;
+      }
+
+      flatTimeState.aiReportText = "";
+      setFlatTimeAiBusyState(true);
+      setFlatTimeAiOutput("Generating the report...", false);
+
+      try {
+        const response = await fetch("/ai/flat-time-report", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            scope: ui.flatTimeAiScope ? ui.flatTimeAiScope.value : "selected-well",
+            specificWork: ui.flatTimeAiWork ? ui.flatTimeAiWork.value.trim() : "",
+            context: flatTimeState.aiContext,
+          }),
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.error || "WeeklyReport could not generate the report right now.");
+        }
+        flatTimeState.aiReportText = String(payload.report || "").trim();
+        setFlatTimeAiOutput(
+          flatTimeState.aiReportText
+            ? renderFlatTimeAiMarkdown(flatTimeState.aiReportText)
+            : "WeeklyReport returned an empty response.",
+          !flatTimeState.aiReportText
+        );
+      } catch (error) {
+        const message = error && error.message ? error.message : "WeeklyReport could not generate the report right now.";
+        setFlatTimeAiOutput(message, true);
+      } finally {
+        setFlatTimeAiBusyState(false);
+      }
+    }
+
+    async function requestFlatTimeAnalystReport() {
+      if (!flatTimeState.aiContext) {
+        setFlatTimeAiOutput("Flat Time context is not ready yet. Load CSV files and try again.", true);
+        return;
+      }
+
+      flatTimeState.aiReportText = buildFlatTimeStandardReport(
+        flatTimeState.aiContext,
+        ui.flatTimeAiScope ? ui.flatTimeAiScope.value : "selected-well"
+      );
+      setFlatTimeAiOutput(
+        flatTimeState.aiReportText
+          ? renderFlatTimeAiMarkdown(flatTimeState.aiReportText)
+          : "WeeklyReport could not build the report for the current scope.",
+        !flatTimeState.aiReportText
+      );
+      setFlatTimeAiBusyState(false);
     }
 
     function renderFlatTimeSeriesLegend(target, seriesDefs) {
@@ -1548,16 +3138,22 @@
       if (!allDatasets.length) {
         ui.flatTimeTitle.textContent = "No flat time datasets loaded";
         ui.flatTimeSubtitle.textContent = "Use the CSV uploader to compare benchmark files.";
-        ui.flatTimeSummary.innerHTML = '<div class="empty">Upload flat time CSV files to start the comparison.</div>';
+        flatTimeState.aiContext = null;
+        flatTimeState.aiReportText = "";
+        if (ui.flatTimeComparisonPhaseTimes) ui.flatTimeComparisonPhaseTimes.innerHTML = '<div class="empty">Upload flat time CSV files to compare phase times.</div>';
+        if (ui.flatTimeComparisonDrillingTime) ui.flatTimeComparisonDrillingTime.innerHTML = '<div class="empty">Upload flat time CSV files to compare drilling-only time.</div>';
+        if (ui.flatTimeComparisonPhaseDetails) ui.flatTimeComparisonPhaseDetails.innerHTML = '<div class="empty">Upload flat time CSV files to review phase detail comparisons.</div>';
+        if (ui.flatTimeComparisonDepthDays) ui.flatTimeComparisonDepthDays.innerHTML = '<div class="empty">Upload flat time CSV files to draw the phase progression chart.</div>';
+        if (ui.flatTimeSummary) ui.flatTimeSummary.innerHTML = '<div class="empty">Upload flat time CSV files to start the comparison.</div>';
         ui.flatTimeTableSummary.innerHTML = '<div class="empty">Upload flat time CSV files to build the selected well table summary.</div>';
         ui.flatTimeWellRanking.innerHTML = '<div class="empty">Upload flat time CSV files to rank wells by excess time.</div>';
-        ui.flatTimeParetoChart.innerHTML = '<div class="empty">Upload flat time CSV files to build a Pareto of recoverable hours.</div>';
-        ui.flatTimeAllWellsSections.innerHTML = '<div class="empty">Upload flat time CSV files to summarize all wells by section.</div>';
+        if (ui.flatTimeParetoChart) ui.flatTimeParetoChart.innerHTML = '<div class="empty">Upload flat time CSV files to build a Pareto of recoverable hours.</div>';
+        if (ui.flatTimeAllWellsSections) ui.flatTimeAllWellsSections.innerHTML = '<div class="empty">Upload flat time CSV files to summarize all wells by section.</div>';
         ui.flatTimeSelectedWellSections.innerHTML = '<div class="empty">Upload flat time CSV files to compare the selected well by section.</div>';
         ui.flatTimeOffsetComparison.innerHTML = '<div class="empty">Upload flat time CSV files to compare the selected well against loaded offsets.</div>';
         ui.flatTimeSectionHeatmap.innerHTML = '<div class="empty">Upload flat time CSV files to draw the section heat map.</div>';
-        ui.flatTimeSavingsSummary.innerHTML = '<div class="empty">Upload flat time CSV files to summarize recoverable time by section.</div>';
-        ui.flatTimeNarrative.innerHTML = '<div class="empty">Upload flat time CSV files to generate the executive explanation.</div>';
+        if (ui.flatTimeSavingsSummary) ui.flatTimeSavingsSummary.innerHTML = '<div class="empty">Upload flat time CSV files to summarize recoverable time by section.</div>';
+        if (ui.flatTimeNarrative) ui.flatTimeNarrative.innerHTML = '<div class="empty">Upload flat time CSV files to generate the executive explanation.</div>';
         ui.flatTimeWaterfallChart.innerHTML = '<div class="empty">Upload flat time CSV files to build the waterfall.</div>';
         ui.flatTimeSectionBenchmarkChart.innerHTML = '<div class="empty">Upload flat time CSV files to compare sections.</div>';
         ui.flatTimeRigSummary.innerHTML = '<div class="empty">Upload flat time CSV files to summarize rigs.</div>';
@@ -1568,7 +3164,7 @@
         ui.flatTimeBenchmarkTable.innerHTML = '<div class="empty">No activity benchmark table available.</div>';
         ui.flatTimeWellDrilldown.innerHTML = '<div class="empty">Upload flat time CSV files to inspect a well.</div>';
         ui.flatTimeActivityDrilldown.innerHTML = '<div class="empty">Upload flat time CSV files to inspect an activity.</div>';
-        ui.flatTimeDrilldownNote.textContent = "Click a well or activity in the tables above to open the benchmark, peer comparison and ideal-time logic.";
+        ui.flatTimeDrilldownNote.textContent = "Use the selectors below to inspect a well, section, or activity benchmark and review the ideal-time logic.";
         ui.flatTimeOpportunityTable.innerHTML = '<div class="empty">No flat time comparison table available.</div>';
         ui.flatTimeGroupTable.innerHTML = '<div class="empty">No flat time group table available.</div>';
         ui.flatTimeLossDrivers.innerHTML = '<div class="empty">Upload flat time CSV files to list top loss drivers by well.</div>';
@@ -1579,6 +3175,7 @@
         }
         ui.flatTimePerfectChart.innerHTML = '<div class="empty">Upload flat time CSV files to draw the perfect flat time curve.</div>';
         populateFlatTimeWellOptions([], "");
+        renderFlatTimeAiPanel(null);
         return;
       }
 
@@ -1591,16 +3188,22 @@
       if (!datasets.length) {
         ui.flatTimeTitle.textContent = "No data for selected section size";
         ui.flatTimeSubtitle.textContent = "Try another rig or section size, or switch back to all sections.";
-        ui.flatTimeSummary.innerHTML = '<div class="empty">No benchmark activities match the selected section size.</div>';
+        flatTimeState.aiContext = null;
+        flatTimeState.aiReportText = "";
+        if (ui.flatTimeComparisonPhaseTimes) ui.flatTimeComparisonPhaseTimes.innerHTML = '<div class="empty">No flat time comparison is available for this section size.</div>';
+        if (ui.flatTimeComparisonDrillingTime) ui.flatTimeComparisonDrillingTime.innerHTML = '<div class="empty">No drilling-only comparison is available for this section size.</div>';
+        if (ui.flatTimeComparisonPhaseDetails) ui.flatTimeComparisonPhaseDetails.innerHTML = '<div class="empty">No phase detail comparison is available for this section size.</div>';
+        if (ui.flatTimeComparisonDepthDays) ui.flatTimeComparisonDepthDays.innerHTML = '<div class="empty">No phase progression is available for this section size.</div>';
+        if (ui.flatTimeSummary) ui.flatTimeSummary.innerHTML = '<div class="empty">No benchmark activities match the selected section size.</div>';
         ui.flatTimeTableSummary.innerHTML = '<div class="empty">No selected well table summary is available for this section size.</div>';
         ui.flatTimeWellRanking.innerHTML = '<div class="empty">No well ranking available for this section size.</div>';
-        ui.flatTimeParetoChart.innerHTML = '<div class="empty">No Pareto data available for this section size.</div>';
-        ui.flatTimeAllWellsSections.innerHTML = '<div class="empty">No well-section summary available for this section size.</div>';
+        if (ui.flatTimeParetoChart) ui.flatTimeParetoChart.innerHTML = '<div class="empty">No Pareto data available for this section size.</div>';
+        if (ui.flatTimeAllWellsSections) ui.flatTimeAllWellsSections.innerHTML = '<div class="empty">No well-section summary available for this section size.</div>';
         ui.flatTimeSelectedWellSections.innerHTML = '<div class="empty">No selected-well section comparison available for this section size.</div>';
         ui.flatTimeOffsetComparison.innerHTML = '<div class="empty">No offset comparison available for this section size.</div>';
         ui.flatTimeSectionHeatmap.innerHTML = '<div class="empty">No section heat map available for this section size.</div>';
-        ui.flatTimeSavingsSummary.innerHTML = '<div class="empty">No savings summary available for this section size.</div>';
-        ui.flatTimeNarrative.innerHTML = '<div class="empty">No executive explanation available for this section size.</div>';
+        if (ui.flatTimeSavingsSummary) ui.flatTimeSavingsSummary.innerHTML = '<div class="empty">No savings summary available for this section size.</div>';
+        if (ui.flatTimeNarrative) ui.flatTimeNarrative.innerHTML = '<div class="empty">No executive explanation available for this section size.</div>';
         ui.flatTimeWaterfallChart.innerHTML = '<div class="empty">No waterfall available for this section size.</div>';
         ui.flatTimeSectionBenchmarkChart.innerHTML = '<div class="empty">No section benchmark available for this section size.</div>';
         ui.flatTimeRigSummary.innerHTML = '<div class="empty">No rig benchmark summary available for this section size.</div>';
@@ -1611,7 +3214,7 @@
         ui.flatTimeBenchmarkTable.innerHTML = '<div class="empty">No benchmark table available for this section size.</div>';
         ui.flatTimeWellDrilldown.innerHTML = '<div class="empty">No well drill-down available for this section size.</div>';
         ui.flatTimeActivityDrilldown.innerHTML = '<div class="empty">No activity drill-down available for this section size.</div>';
-        ui.flatTimeDrilldownNote.textContent = "Click a well or activity in the tables above to open the benchmark, peer comparison and ideal-time logic.";
+        ui.flatTimeDrilldownNote.textContent = "Use the selectors below to inspect a well, section, or activity benchmark and review the ideal-time logic.";
         ui.flatTimeOpportunityTable.innerHTML = '<div class="empty">No flat time comparison table available for this section size.</div>';
         ui.flatTimeGroupTable.innerHTML = '<div class="empty">No flat time group table available for this section size.</div>';
         ui.flatTimeLossDrivers.innerHTML = '<div class="empty">No loss driver ranking available for this section size.</div>';
@@ -1622,11 +3225,13 @@
         }
         ui.flatTimePerfectChart.innerHTML = '<div class="empty">No section-sized activities available for the perfect flat time curve.</div>';
         populateFlatTimeWellOptions([], "");
+        renderFlatTimeAiPanel(null);
         return;
       }
 
       const groupItems = buildFlatTimeGroupItems(datasets, totalKey);
       const activityItems = buildFlatTimeActivityItems(datasets, metricKey);
+      const comparisonData = buildFlatTimeComparisonData(datasets);
       const sectionLabel = selectedSectionSize ? formatFlatTimeSectionSize(selectedSectionSize) : "All section sizes";
       if (ui.flatTimeHeatmapNote) {
         ui.flatTimeHeatmapNote.textContent =
@@ -1644,8 +3249,9 @@
         key: dataset.id,
         label: dataset.subjectWell,
         color: FLAT_TIME_SERIES_COLORS[index % FLAT_TIME_SERIES_COLORS.length],
-        format: (value) => formatNumber(value),
+        format: (value) => formatHours(value),
       }));
+
       renderFlatTimeSeriesLegend(ui.flatTimeGroupLegend, seriesDefs);
 
       renderMultiSeriesChart(ui.flatTimeGroupChart, groupItems.slice(0, 8), seriesDefs, {
@@ -1669,10 +3275,39 @@
       if (!flatTimeState.focusWell || !datasets.some((dataset) => dataset.subjectWell === flatTimeState.focusWell)) {
         flatTimeState.focusWell = worstWell;
       }
-      const selectedActivities = normalizeFlatTimeFocusActivities(allOpportunities, topActivityFocus);
+      const selectedActivities = normalizeFlatTimeFocusActivities(allOpportunities, topActivityFocus, { allowEmpty: true });
       populateFlatTimeWellOptions(datasets, flatTimeState.focusWell || worstWell);
       const selectedWell = ui.flatTimeWell.value || flatTimeState.focusWell || worstWell;
       const selectedDataset = datasets.find((dataset) => dataset.subjectWell === selectedWell) || datasets[0];
+      renderFlatTimeComparisonOverview(
+        ui.flatTimeComparisonPhaseTimes,
+        comparisonData.phaseTimesItems,
+        datasets,
+        selectedDataset,
+        "No phase totals are available after excluding drilling actions D, DMR, and DMS.",
+        { labelHeader: "Phase" }
+      );
+      renderFlatTimeComparisonOverview(
+        ui.flatTimeComparisonDrillingTime,
+        comparisonData.drillingTimeItems,
+        datasets,
+        selectedDataset,
+        "No drilling-action totals are available for D, DMR, or DMS in the current scope.",
+        { labelHeader: "Phase" }
+      );
+      renderFlatTimeComparisonPhaseDetails(
+        ui.flatTimeComparisonPhaseDetails,
+        comparisonData.phaseDetails,
+        datasets,
+        selectedDataset
+      );
+      renderFlatTimeComparisonProgression(
+        ui.flatTimeComparisonDepthDays,
+        comparisonData.progressionItems,
+        datasets,
+        selectedDataset
+      );
+      const selectedWellParetoItems = buildSelectedWellParetoItems(selectedDataset, allOpportunities);
       const sectionBreakdownMap = buildSectionBreakdownMap(datasets, allOpportunities, metricKey);
       const selectedWellSectionItems = buildSelectedWellSectionItems(datasets, selectedDataset, sectionBreakdownMap);
       const allWellSectionRows = buildAllWellsSectionSummaryRows(datasets, sectionBreakdownMap);
@@ -1680,28 +3315,48 @@
       const sectionBenchmarkItems = buildSectionBenchmarkItems(datasets, metricKey, allOpportunities);
       const rigBenchmarkRows = buildRigBenchmarkSummary(datasets, allOpportunities);
       const opportunityPipeline = buildOpportunityPipeline(allOpportunities).slice(0, Math.max(topN, 8));
+      const selectedActivityAggregate = buildSelectedActivityAggregate(allOpportunities, selectedActivities);
+      flatTimeState.aiContext = buildFlatTimeAiContext(
+        datasets,
+        selectedDataset,
+        selectedWell,
+        selectedRig,
+        selectedSectionSize,
+        selectedActivities,
+        selectedActivityAggregate,
+        metricKey,
+        totalKey,
+        wellRanking,
+        sectionSavingsRows,
+        selectedWellSectionItems,
+        rigBenchmarkRows,
+        opportunityPipeline,
+        allOpportunities
+      );
+      flatTimeState.aiReportText = "";
+      renderFlatTimeAiPanel(flatTimeState.aiContext);
 
       renderFlatTimeTableSummary(ui.flatTimeTableSummary, selectedDataset, allOpportunities, selectedSectionSize);
 
       renderTableHtml(
         ui.flatTimeWellRanking,
-        ["Rig", "Well", "Actual Total (hr)", "Ideal Total (hr)", "Excess Time (hr)", "Top Drivers"],
+        ["Rig", "Well", "Actual Total (hr / d)", "Ideal Total (hr / d)", "Excess Time (hr / d)", "Top Drivers"],
         wellRanking.map((row) => [
           escapeHtml(row.rigLabel),
           flatTimeActionButtonHtml("well", row.wellLabel, row.wellLabel),
-          escapeHtml(formatNumber(row.actualTotal)),
-          escapeHtml(formatNumber(row.idealTotal)),
+          escapeHtml(formatHours(row.actualTotal) + " hr / " + formatDays(row.actualTotal / 24) + " d"),
+          escapeHtml(formatHours(row.idealTotal) + " hr / " + formatDays(row.idealTotal / 24) + " d"),
           flatTimeTrendHtml(row.excessTotal),
           row.topDrivers.length || row.otherDriversGap > 0
             ? [
-                ...row.topDrivers.map((driver) => flatTimeActivityLabelHtml(driver.activity) + escapeHtml(" (" + driver.group + ", +" + formatNumber(driver.gap) + " hr)")),
-                ...(row.otherDriversGap > 0 ? ['<span style="color:var(--muted); font-weight:700;">' + escapeHtml("Other drivers (+" + formatNumber(row.otherDriversGap) + " hr)") + '</span>'] : []),
+                ...row.topDrivers.map((driver) => flatTimeActivityLabelHtml(driver.activity) + escapeHtml(" (" + driver.group + ", +" + formatHours(driver.gap) + " hr)")),
+                ...(row.otherDriversGap > 0 ? ['<span style="color:var(--muted); font-weight:700;">' + escapeHtml("Other drivers (+" + formatHours(row.otherDriversGap) + " hr)") + '</span>'] : []),
               ].join("<br>")
             : escapeHtml("No excess detected"),
         ])
       );
 
-      renderParetoChart(ui.flatTimeParetoChart, rankedOpportunities);
+      renderParetoChart(ui.flatTimeParetoChart, selectedWellParetoItems, "selectedWellRecoverableHours");
       renderAllWellsSectionSummary(
         ui.flatTimeAllWellsSections,
         allWellSectionRows,
@@ -1717,23 +3372,25 @@
         ["Section", "Recoverable (hr)", "Recoverable (d)", "Impacted Wells", "Top Activity", "Confidence", "Recommended Action"],
         sectionSavingsRows.map((row) => [
           escapeHtml(row.sectionLabel),
-          escapeHtml(formatNumber(row.recoverableHours)),
-          escapeHtml(formatNumber(row.recoverableDays)),
+          escapeHtml(formatHours(row.recoverableHours)),
+          escapeHtml(formatDays(row.recoverableDays)),
           escapeHtml(String(row.impactedWells)),
           flatTimeActivityLabelHtml(row.topActivity),
           confidenceBadgeHtml(row.confidence),
           escapeHtml(row.recommendation),
         ])
       );
-      ui.flatTimeNarrative.innerHTML = buildExecutiveNarrativeHtml(selectedDataset, selectedWellSectionItems, sectionSavingsRows, wellRanking);
+      if (ui.flatTimeNarrative) {
+        ui.flatTimeNarrative.innerHTML = buildExecutiveNarrativeHtml(selectedDataset, selectedWellSectionItems, sectionSavingsRows, wellRanking);
+      }
       renderWaterfallChart(ui.flatTimeWaterfallChart, selectedDataset, allOpportunities);
       renderMultiSeriesChart(
         ui.flatTimeSectionBenchmarkChart,
         sectionBenchmarkItems,
         [
-          { key: "actualAverage", label: "Actual avg", color: "#1264d6", format: (value) => formatNumber(value) },
-          { key: "idealTime", label: "Recommended ideal", color: "#0f766e", format: (value) => formatNumber(value) },
-          { key: "spread", label: "Spread", color: "#c06a0a", format: (value) => formatNumber(value) },
+          { key: "actualAverage", label: "Actual avg", color: "#1264d6", format: (value) => formatHours(value) },
+          { key: "idealTime", label: "Recommended ideal", color: "#0f766e", format: (value) => formatHours(value) },
+          { key: "spread", label: "Spread", color: "#c06a0a", format: (value) => formatHours(value) },
         ],
         {
           height: 420,
@@ -1748,9 +3405,9 @@
         rigBenchmarkRows.map((row) => [
           row.rigLabel,
           String(row.wellCount),
-          formatNumber(row.averageFlatTime),
-          formatNumber(row.averageIdealTime),
-          formatNumber(row.excessTime),
+          formatHours(row.averageFlatTime),
+          formatHours(row.averageIdealTime),
+          formatHours(row.excessTime),
           row.mainRepeatingActivity,
         ])
       );
@@ -1763,8 +3420,8 @@
           escapeHtml(row.groupLabel),
           escapeHtml(String(row.occurrenceCount)),
           escapeHtml(String(row.wellsImpacted)),
-          escapeHtml(formatNumber(row.idealTime)),
-          escapeHtml(formatNumber(row.totalRecoverableHours)),
+          escapeHtml(formatHours(row.idealTime)),
+          escapeHtml(formatHours(row.totalRecoverableHours)),
           escapeHtml(row.priority),
         ])
       );
@@ -1779,14 +3436,14 @@
             escapeHtml(opportunity.groupLabel),
             flatTimeActionButtonHtml("activity", opportunity.activityLabel, opportunity.activityLabel),
             escapeHtml(String(opportunity.occurrenceCount)),
-            escapeHtml(formatNumber(opportunity.fastestTime)),
-            escapeHtml(formatNumber(opportunity.p25Value)),
-            escapeHtml(formatNumber(opportunity.medianValue)),
-            escapeHtml(formatNumber(opportunity.meanValue)),
-            escapeHtml(formatNumber(opportunity.idealTime) + " (" + opportunity.idealRule + ")"),
+            escapeHtml(formatHours(opportunity.fastestTime)),
+            escapeHtml(formatHours(opportunity.p25Value)),
+            escapeHtml(formatHours(opportunity.medianValue)),
+            escapeHtml(formatHours(opportunity.meanValue)),
+            escapeHtml(formatHours(opportunity.idealTime) + " (" + opportunity.idealRule + ")"),
             escapeHtml(opportunity.variability),
             confidenceBadgeHtml(opportunity.confidence),
-            escapeHtml(formatNumber(opportunity.totalRecoverableHours)),
+            escapeHtml(formatHours(opportunity.totalRecoverableHours)),
             flatTimeActionButtonHtml("well", opportunity.topEntry.label || "", (opportunity.topEntry.rigLabel || "Rig not mapped") + " • " + (opportunity.topEntry.label || "N/A")),
           ])
       );
@@ -1799,9 +3456,9 @@
           const explanation =
             opportunity.occurrenceCount >= 2
               ? (
-                  (opportunity.occurrenceCount - 1) + " peer wells avg " + formatNumber(peerReference) +
-                  " hr; " + opportunity.topEntry.label + " ran " + formatNumber(opportunity.topEntry.value) +
-                  " hr; ideal = " + formatNumber(opportunity.idealTime) + " hr; gap = " + formatNumber(opportunity.gapToIdeal) + " hr"
+                  (opportunity.occurrenceCount - 1) + " peer wells avg " + formatHours(peerReference) +
+                  " hr; " + opportunity.topEntry.label + " ran " + formatHours(opportunity.topEntry.value) +
+                  " hr; ideal = " + formatHours(opportunity.idealTime) + " hr; gap = " + formatHours(opportunity.gapToIdeal) + " hr"
                 )
               : "Only one well available, so no peer comparison yet";
 
@@ -1812,10 +3469,10 @@
             escapeHtml(String(opportunity.occurrenceCount)),
             escapeHtml(opportunity.topEntry.rigLabel || "Rig not mapped"),
             flatTimeActionButtonHtml("well", opportunity.topEntry.label || "", opportunity.topEntry.label || "N/A"),
-            escapeHtml(formatNumber(opportunity.topEntry.value)),
-            escapeHtml(formatNumber(peerReference)),
-            escapeHtml(formatNumber(opportunity.idealTime)),
-            escapeHtml(formatNumber(opportunity.gapToIdeal)),
+            escapeHtml(formatHours(opportunity.topEntry.value)),
+            escapeHtml(formatHours(peerReference)),
+            escapeHtml(formatHours(opportunity.idealTime)),
+            escapeHtml(formatHours(opportunity.gapToIdeal)),
             escapeHtml(explanation + " (" + opportunity.idealRule + ")"),
           ];
         })
@@ -1826,8 +3483,8 @@
         ["Group", ...datasets.map((dataset) => dataset.subjectWell), "Total"],
         groupItems.map((item) => [
           item.label,
-          ...datasets.map((dataset) => formatNumber(item[dataset.id] || 0)),
-          formatNumber(item.total),
+          ...datasets.map((dataset) => formatHours(item[dataset.id] || 0)),
+          formatHours(item.total),
         ])
       );
 
@@ -1837,10 +3494,10 @@
         wellRanking.map((row) => [
           row.rigLabel,
           row.wellLabel,
-          row.topDrivers[0] ? row.topDrivers[0].activity + " (+" + formatNumber(row.topDrivers[0].gap) + " hr)" : "-",
-          row.topDrivers[1] ? row.topDrivers[1].activity + " (+" + formatNumber(row.topDrivers[1].gap) + " hr)" : "-",
-          row.topDrivers[2] ? row.topDrivers[2].activity + " (+" + formatNumber(row.topDrivers[2].gap) + " hr)" : "-",
-          formatNumber(row.excessTotal),
+          row.topDrivers[0] ? row.topDrivers[0].activity + " (+" + formatHours(row.topDrivers[0].gap) + " hr)" : "-",
+          row.topDrivers[1] ? row.topDrivers[1].activity + " (+" + formatHours(row.topDrivers[1].gap) + " hr)" : "-",
+          row.topDrivers[2] ? row.topDrivers[2].activity + " (+" + formatHours(row.topDrivers[2].gap) + " hr)" : "-",
+          formatHours(row.excessTotal),
         ])
       );
 
