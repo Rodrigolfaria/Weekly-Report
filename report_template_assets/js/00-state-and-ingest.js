@@ -6,6 +6,9 @@
       week: document.getElementById("week-filter"),
       month: document.getElementById("month-filter"),
       dashboardMode: document.getElementById("dashboard-mode"),
+      dashboardModeButtons: Array.from(document.querySelectorAll("[data-dashboard-mode]")),
+      dashboardUpload: document.getElementById("dashboard-upload"),
+      dashboardUploadName: document.getElementById("dashboard-upload-name"),
       rig: document.getElementById("rig-filter"),
       field: document.getElementById("field-filter"),
       well: document.getElementById("well-filter"),
@@ -73,6 +76,7 @@
       flatTimeHeatmapMode: document.getElementById("flat-time-heatmap-mode"),
       flatTimeWell: document.getElementById("flat-time-well"),
       flatTimeUpload: document.getElementById("flat-time-upload"),
+      flatTimeUploadName: document.getElementById("flat-time-upload-name"),
       flatTimeRecalculate: document.getElementById("flat-time-recalculate"),
       flatTimeClearUploads: document.getElementById("flat-time-clear-uploads"),
       flatTimeDatasetTags: document.getElementById("flat-time-dataset-tags"),
@@ -154,12 +158,15 @@
     };
     const FLAT_TIME_RIG_LOOKUP = buildFlatTimeRigLookup(Array.isArray(dashboardData.interventions) ? dashboardData.interventions : []);
     const flatTimeState = {
-      baseDatasets: [],
+      baseDatasets: dashboardData.flatTime && Array.isArray(dashboardData.flatTime.datasets)
+        ? dashboardData.flatTime.datasets
+        : [],
       uploadedDatasets: [],
       focusWell: "",
       focusActivity: "",
       focusActivities: [],
       activityPickerOpen: false,
+      progressionHiddenDatasetIds: [],
       heatmapMode: "gap",
       aiContext: null,
       aiReportText: "",

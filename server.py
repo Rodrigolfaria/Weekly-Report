@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import csv
 import html
 import hmac
 import json
@@ -18,8 +19,10 @@ from urllib.parse import urlparse
 from generate_report import (
     build_csv_report_html,
     build_empty_report_html,
+    build_flat_time_csvs_report_html,
     build_report_html,
 )
+from report_flat_time import looks_like_flat_time_csv
 from report_ai import generate_flat_time_ai_report
 
 
@@ -33,9 +36,16 @@ BASIC_AUTH_PASSWORD = os.getenv("BASIC_AUTH_PASSWORD", "")
 ALLOWED_IPS = [item.strip() for item in os.getenv("ALLOWED_IPS", "").split(",") if item.strip()]
 
 def parse_uploaded_file(headers, body: bytes) -> tuple[str, bytes] | tuple[None, None]:
+    files = parse_uploaded_files(headers, body)
+    if not files:
+        return None, None
+    return files[0]
+
+
+def parse_uploaded_files(headers, body: bytes) -> list[tuple[str, bytes]]:
     content_type = headers.get("Content-Type", "")
     if "multipart/form-data" not in content_type:
-        return None, None
+        return []
 
     message = BytesParser(policy=default).parsebytes(
         (
@@ -44,6 +54,7 @@ def parse_uploaded_file(headers, body: bytes) -> tuple[str, bytes] | tuple[None,
         ).encode("utf-8") + body
     )
 
+    files: list[tuple[str, bytes]] = []
     for part in message.iter_parts():
         if part.get_content_disposition() != "form-data":
             continue
@@ -51,10 +62,9 @@ def parse_uploaded_file(headers, body: bytes) -> tuple[str, bytes] | tuple[None,
             continue
         filename = part.get_filename()
         payload = part.get_payload(decode=True) or b""
-        if not filename:
-            return None, None
-        return filename, payload
-    return None, None
+        if filename and payload:
+            files.append((filename, payload))
+    return files
 
 
 def render_home_page(message: str = "", is_error: bool = False) -> str:
@@ -592,36 +602,57 @@ class ReportHandler(BaseHTTPRequestHandler):
             return
 
         body = self.rfile.read(content_length)
-        filename, payload = parse_uploaded_file(self.headers, body)
+        uploaded_files = parse_uploaded_files(self.headers, body)
 
-        if not filename or not payload:
+        if not uploaded_files:
             self._send_text(
                 HTTPStatus.BAD_REQUEST,
                 render_message_page("Upload failed", "Please choose a valid .xlsx or .csv file before uploading.", "Error"),
             )
             return
 
-        lower_name = filename.lower()
-
         try:
-            if lower_name.endswith(".xlsx"):
-                html_report = build_report_html(
-                    filename,
-                    payload,
-                    flat_time_payload={"datasets": []},
-                )
-            elif lower_name.endswith(".csv"):
-                html_report = build_csv_report_html(
-                    filename,
-                    payload,
-                    flat_time_payload={"datasets": []},
-                )
+            if len(uploaded_files) > 1:
+                invalid_files = [name for name, _payload in uploaded_files if not name.lower().endswith(".csv")]
+                if invalid_files:
+                    self._send_text(
+                        HTTPStatus.BAD_REQUEST,
+                        render_message_page("Upload failed", "Multiple upload is only supported for Flat Time .csv files.", "Error"),
+                    )
+                    return
+
+                flat_time_files: list[tuple[str, bytes]] = []
+                for name, csv_payload in uploaded_files:
+                    csv_rows = csv_payload.decode("utf-8-sig", errors="ignore").splitlines()
+                    if not looks_like_flat_time_csv(list(csv.reader(csv_rows))):
+                        self._send_text(
+                            HTTPStatus.BAD_REQUEST,
+                            render_message_page("Upload failed", "When selecting multiple CSVs, every file must be a Flat Time CSV.", "Error"),
+                        )
+                        return
+                    flat_time_files.append((name, csv_payload))
+                html_report = build_flat_time_csvs_report_html(flat_time_files)
             else:
-                self._send_text(
-                    HTTPStatus.BAD_REQUEST,
-                    render_message_page("Upload failed", "Only .xlsx and .csv files are supported.", "Error"),
-                )
-                return
+                filename, payload = uploaded_files[0]
+                lower_name = filename.lower()
+                if lower_name.endswith(".xlsx"):
+                    html_report = build_report_html(
+                        filename,
+                        payload,
+                        flat_time_payload={"datasets": []},
+                    )
+                elif lower_name.endswith(".csv"):
+                    html_report = build_csv_report_html(
+                        filename,
+                        payload,
+                        flat_time_payload={"datasets": []},
+                    )
+                else:
+                    self._send_text(
+                        HTTPStatus.BAD_REQUEST,
+                        render_message_page("Upload failed", "Only .xlsx and .csv files are supported.", "Error"),
+                    )
+                    return
         except Exception as exc:  # noqa: BLE001
             self._send_text(
                 HTTPStatus.INTERNAL_SERVER_ERROR,

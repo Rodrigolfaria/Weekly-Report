@@ -111,6 +111,9 @@
       if (ui.dashboardMode) {
         ui.dashboardMode.value = resolvedMode;
       }
+      ui.dashboardModeButtons.forEach((button) => {
+        button.classList.toggle("is-active", button.dataset.dashboardMode === resolvedMode);
+      });
       if (resolvedMode === "weekly") {
         setActiveView("weekly-report-view");
         renderWeeklyReport();
@@ -396,6 +399,17 @@
         toggle.addEventListener("change", updateSectionVisibility);
       });
 
+      if (ui.dashboardUpload && ui.dashboardUploadName) {
+        ui.dashboardUpload.addEventListener("change", () => {
+          const files = Array.from(ui.dashboardUpload.files || []);
+          if (!files.length) {
+            ui.dashboardUploadName.textContent = "Choose XLSX workbook or CSV files";
+            return;
+          }
+          ui.dashboardUploadName.textContent = files.length === 1 ? files[0].name : files.length + " files selected";
+        });
+      }
+
       ui.viewTabs.forEach((button) => {
         button.addEventListener("click", () => {
           if (button.dataset.view === "dashboard-view") {
@@ -411,6 +425,11 @@
           setDashboardMode(ui.dashboardMode.value);
         });
       }
+      ui.dashboardModeButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          setDashboardMode(button.dataset.dashboardMode);
+        });
+      });
 
       ui.weeklyExportPdf.addEventListener("click", exportWeeklyReportPdf);
       ui.weeklyReportStartDate.addEventListener("change", () => {
@@ -439,8 +458,14 @@
       });
       ui.flatTimeRecalculate.addEventListener("click", renderFlatTime);
       ui.flatTimeClearUploads.addEventListener("click", () => {
+        flatTimeState.baseDatasets = [];
         flatTimeState.uploadedDatasets = [];
-        ui.flatTimeUpload.value = "";
+        if (ui.flatTimeUpload) {
+          ui.flatTimeUpload.value = "";
+        }
+        if (ui.flatTimeUploadName) {
+          ui.flatTimeUploadName.textContent = "Use the Load File control above to import one or more Flat Time CSV files.";
+        }
         ui.flatTimeRig.value = "";
         ui.flatTimeSection.value = "";
         ui.flatTimeWell.value = "";
@@ -448,25 +473,32 @@
         flatTimeState.focusWell = "";
         flatTimeState.focusActivity = "";
         flatTimeState.focusActivities = [];
+        flatTimeState.progressionHiddenDatasetIds = [];
         flatTimeState.heatmapMode = "gap";
         renderFlatTime();
       });
-      ui.flatTimeUpload.addEventListener("change", async () => {
-        const files = Array.from(ui.flatTimeUpload.files || []);
-        if (!files.length) return;
-        const parsed = await Promise.all(
-          files.map(async (file) => parseFlatTimeCsvText(file.name, await file.text()))
-        );
-        const prepared = parsed
-          .flat()
-          .filter((item) => item && item.groups && item.groups.length)
-          .map((item) => ({ ...item, id: createFlatTimeUploadId(item.fileName, item.subjectWell) }));
-        flatTimeState.uploadedDatasets = [
-          ...flatTimeState.uploadedDatasets,
-          ...prepared,
-        ];
-        renderFlatTime();
-      });
+      if (ui.flatTimeUpload) {
+        ui.flatTimeUpload.addEventListener("change", async () => {
+          const files = Array.from(ui.flatTimeUpload.files || []);
+          if (!files.length) return;
+          if (ui.flatTimeUploadName) {
+            ui.flatTimeUploadName.textContent =
+              files.length === 1 ? files[0].name : files.length + " CSV files selected";
+          }
+          const parsed = await Promise.all(
+            files.map(async (file) => parseFlatTimeCsvText(file.name, await file.text()))
+          );
+          const prepared = parsed
+            .flat()
+            .filter((item) => item && item.groups && item.groups.length)
+            .map((item) => ({ ...item, id: createFlatTimeUploadId(item.fileName, item.subjectWell) }));
+          flatTimeState.uploadedDatasets = [
+            ...flatTimeState.uploadedDatasets,
+            ...prepared,
+          ];
+          renderFlatTime();
+        });
+      }
       if (ui.flatTimeAiScope) {
         ui.flatTimeAiScope.addEventListener("change", () => {
           renderFlatTimeAiPanel(flatTimeState.aiContext);
@@ -522,6 +554,9 @@
       applyFilters();
       renderWeeklyReport();
       renderFlatTime();
+      if (flatTimeState.baseDatasets.length && !(Array.isArray(dashboardData.interventions) && dashboardData.interventions.length)) {
+        setActiveView("flat-time-view");
+      }
     }
 
     initialize();

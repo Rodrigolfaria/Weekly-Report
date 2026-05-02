@@ -139,9 +139,13 @@ def build_csv_sheet(csv_name: str, csv_bytes: bytes) -> SheetData:
 def build_flat_time_csv_report_html(csv_name: str, csv_bytes: bytes) -> str:
     rows = list(csv.reader(csv_bytes.decode("utf-8-sig", errors="ignore").splitlines()))
     datasets = parse_flat_time_matrix_rows(csv_name, rows)
+    return build_flat_time_datasets_report_html(csv_name, datasets)
+
+
+def build_flat_time_datasets_report_html(source_name: str, datasets: list[dict[str, Any]]) -> str:
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     payload = build_dashboard_payload(
-        spreadsheet_name=f"{csv_name} (Flat Time CSV only)",
+        spreadsheet_name=f"{source_name} (Flat Time CSV only)",
         generated_at=generated_at,
         intervention_rows=[],
         cost_avoidance_rows=[],
@@ -150,11 +154,25 @@ def build_flat_time_csv_report_html(csv_name: str, csv_bytes: bytes) -> str:
     )
 
     return build_html(
-        title=f"Interactive Report - {csv_name}",
-        source_file=f"{csv_name} (Flat Time CSV mode)",
+        title=f"Interactive Report - {source_name}",
+        source_file=f"{source_name} (Flat Time CSV mode)",
         generated_at=generated_at,
         payload=payload,
     )
+
+
+def build_flat_time_csvs_report_html(csv_files: list[tuple[str, bytes]]) -> str:
+    datasets: list[dict[str, Any]] = []
+    names: list[str] = []
+    for csv_name, csv_bytes in csv_files:
+        rows = list(csv.reader(csv_bytes.decode("utf-8-sig", errors="ignore").splitlines()))
+        datasets.extend(parse_flat_time_matrix_rows(csv_name, rows))
+        names.append(csv_name)
+
+    source_name = ", ".join(names[:3])
+    if len(names) > 3:
+        source_name += f" + {len(names) - 3} more"
+    return build_flat_time_datasets_report_html(source_name, datasets)
 
 
 def build_intervention_csv_report_html(csv_name: str, csv_bytes: bytes, flat_time_payload: dict[str, Any] | None = None) -> str:

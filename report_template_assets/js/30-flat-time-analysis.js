@@ -1306,17 +1306,22 @@
 
       const phaseOrder = visibleItems.map((item) => item.phase);
       const chartTheme = getChartTheme();
-      const width = 1040;
-      const height = 470;
-      const margin = { top: 24, right: 116, bottom: 84, left: 96 };
+      const width = 1160;
+      const height = 520;
+      const margin = { top: 34, right: 170, bottom: 78, left: 104 };
       const chartWidth = width - margin.left - margin.right;
       const chartHeight = height - margin.top - margin.bottom;
-      const yPadTop = 8;
-      const yPadBottom = 32;
+      const yPadTop = 12;
+      const yPadBottom = 46;
       const yUsableHeight = Math.max(chartHeight - yPadTop - yPadBottom, 1);
 
       const orderedDatasets = buildComparisonDatasetsOrder(datasets, selectedDataset);
-      const series = orderedDatasets.map((dataset, index) => {
+      const hiddenDatasetIds = new Set(Array.isArray(flatTimeState.progressionHiddenDatasetIds) ? flatTimeState.progressionHiddenDatasetIds : []);
+      if (orderedDatasets.length && orderedDatasets.every((dataset) => hiddenDatasetIds.has(dataset.id))) {
+        flatTimeState.progressionHiddenDatasetIds = [];
+        hiddenDatasetIds.clear();
+      }
+      const allSeries = orderedDatasets.map((dataset, index) => {
         let cumulativeDays = 0;
         const points = [];
         visibleItems.forEach((item, phaseIndex) => {
@@ -1363,12 +1368,15 @@
           }
         });
         return {
+          id: dataset.id,
           label: dataset.id === selectedDataset.id ? dataset.subjectWell + " (selected)" : dataset.subjectWell,
           color: FLAT_TIME_SERIES_COLORS[index % FLAT_TIME_SERIES_COLORS.length],
           isSelected: dataset.id === selectedDataset.id,
+          isHidden: hiddenDatasetIds.has(dataset.id),
           points,
         };
       });
+      const series = allSeries.filter((line) => !line.isHidden);
 
       const domainMaxDays = Math.max(1, Math.max(
         ...series.flatMap((line) => line.points.map((point) => point.cumulativeDays)),
@@ -1384,6 +1392,17 @@
           y: margin.top + yPadTop + ((point.phaseIndex - 1) / Math.max(maxDepth - 1, 1)) * yUsableHeight,
         })),
       }));
+
+      const phaseBands = phaseOrder
+        .map((_phase, index) => {
+          if (index % 2 !== 0) return "";
+          const y1 = margin.top + yPadTop + (index / Math.max(maxDepth - 1, 1)) * yUsableHeight;
+          const y2 = index >= maxDepth - 1
+            ? height - margin.bottom
+            : margin.top + yPadTop + ((index + 1) / Math.max(maxDepth - 1, 1)) * yUsableHeight;
+          return '<rect x="' + margin.left + '" y="' + y1.toFixed(2) + '" width="' + chartWidth + '" height="' + Math.max(y2 - y1, 0).toFixed(2) + '" fill="rgba(21,95,184,0.025)"></rect>';
+        })
+        .join("");
 
       const xTicks = Array.from({ length: 6 }, (_, index) => {
         const value = (domainMaxDays / 5) * index;
@@ -1414,29 +1433,41 @@
           const endPoint = line.points[line.points.length - 1];
           const labelYOffset = (index - (scaledSeries.length - 1) / 2) * 12;
           const labelY = Math.max(margin.top + 12, Math.min(height - margin.bottom - 8, endPoint.y + labelYOffset));
+          const labelAnchorLeft = endPoint.x > width - margin.right - 120;
+          const labelX = labelAnchorLeft ? Math.max(margin.left + 8, endPoint.x - 12) : Math.min(width - 10, endPoint.x + 14);
+          const labelAnchor = labelAnchorLeft ? "end" : "start";
           return (
-            '<g>' +
-            '<path d="' + path + '" fill="none" stroke="' + line.color + '" stroke-width="' + (line.isSelected ? "4.2" : "2.8") + '" stroke-linecap="round" stroke-linejoin="round"></path>' +
-            '<text x="' + Math.min(width - 10, endPoint.x + 14).toFixed(2) + '" y="' + labelY.toFixed(2) + '" font-size="11" font-weight="700" fill="' + chartTheme.pointLabel + '">' + escapeHtml(line.label + " • " + formatDays(endPoint.cumulativeDays) + " d") + '</text>' +
+            '<g class="trajectory-series' + (line.isSelected ? " is-selected" : "") + '">' +
+            '<path d="' + path + '" fill="none" stroke="rgba(255,255,255,0.72)" stroke-width="' + (line.isSelected ? "7.2" : "5.4") + '" stroke-linecap="round" stroke-linejoin="round"></path>' +
+            '<path d="' + path + '" fill="none" stroke="' + line.color + '" stroke-width="' + (line.isSelected ? "4.6" : "3.1") + '" stroke-linecap="round" stroke-linejoin="round">' +
+            '<title>' + escapeHtml(line.label + " • " + formatDays(endPoint.cumulativeDays) + " d") + '</title>' +
+            '</path>' +
+            '<circle cx="' + endPoint.x.toFixed(2) + '" cy="' + endPoint.y.toFixed(2) + '" r="' + (line.isSelected ? "4.2" : "3.2") + '" fill="' + line.color + '" stroke="#ffffff" stroke-width="2"></circle>' +
+            '<text x="' + labelX.toFixed(2) + '" y="' + labelY.toFixed(2) + '" text-anchor="' + labelAnchor + '" font-size="10.5" font-weight="' + (line.isSelected ? "800" : "680") + '" fill="' + chartTheme.pointLabel + '">' + escapeHtml(line.label + " • " + formatDays(endPoint.cumulativeDays) + " d") + '</text>' +
             '</g>'
           );
         })
         .join("");
 
-      const legend = series
+      const legend = allSeries
         .map((line) => (
-          '<span class="legend-item" style="margin-right:12px;">' +
-          '<span class="legend-dot" style="background:' + line.color + '; width:14px; height:14px;"></span>' +
-          escapeHtml(line.label) +
-          '</span>'
+          '<button class="trajectory-legend-item' + (line.isHidden ? " is-muted" : "") + (line.isSelected ? " is-selected" : "") + '" type="button" data-progression-toggle="' + escapeHtml(line.id) + '" title="Click to show or hide this well">' +
+          '<span class="legend-dot" style="background:' + line.color + ';"></span>' +
+          '<span>' + escapeHtml(line.label) + '</span>' +
+          '</button>'
         ))
         .join("");
 
       target.innerHTML =
-        '<div class="legend" style="margin-bottom:12px; flex-wrap:wrap;">' + legend + '</div>' +
-        '<p class="report-note">PRE is excluded from this chart. Horizontal segments represent flat time in each phase, while the transition between phases represents drilling time from actions D, DMR, and DMS.</p>' +
-        '<div class="column-chart-wrap">' +
-        '<svg class="column-chart-svg" viewBox="0 0 ' + width + " " + height + '" role="img" aria-label="Phase progression by days chart">' +
+        '<div class="trajectory-chart-shell">' +
+        '<div class="trajectory-chart-topline">' +
+        '<div class="trajectory-legend" aria-label="Toggle wells in chart">' + legend + '</div>' +
+        '<span class="trajectory-hint">Click a well to hide/show it</span>' +
+        '</div>' +
+        '<p class="report-note">PRE is excluded. Horizontal segments are flat time by phase; vertical transitions represent drilling time from actions D, DMR, and DMS.</p>' +
+        '<div class="column-chart-wrap trajectory-chart-wrap">' +
+        '<svg class="column-chart-svg trajectory-svg" viewBox="0 0 ' + width + " " + height + '" role="img" aria-label="Phase progression by days chart">' +
+        phaseBands +
         xTicks +
         yTicks +
         '<line x1="' + margin.left + '" y1="' + margin.top + '" x2="' + margin.left + '" y2="' + (height - margin.bottom) + '" stroke="' + chartTheme.axis + '"></line>' +
@@ -1444,7 +1475,22 @@
         lineSvg +
         '<text x="' + (margin.left + chartWidth / 2).toFixed(2) + '" y="' + (height - 8) + '" text-anchor="middle" font-size="12" font-weight="700" fill="' + chartTheme.text + '">Days</text>' +
         '<text x="20" y="' + (margin.top + chartHeight / 2).toFixed(2) + '" text-anchor="middle" font-size="12" font-weight="700" fill="' + chartTheme.text + '" transform="rotate(-90 20 ' + (margin.top + chartHeight / 2).toFixed(2) + ')">Depth / Phase Progression</text>' +
-        "</svg></div>";
+        "</svg></div></div>";
+
+      target.querySelectorAll("[data-progression-toggle]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const datasetId = button.getAttribute("data-progression-toggle") || "";
+          if (!datasetId) return;
+          const currentHidden = new Set(Array.isArray(flatTimeState.progressionHiddenDatasetIds) ? flatTimeState.progressionHiddenDatasetIds : []);
+          if (currentHidden.has(datasetId)) {
+            currentHidden.delete(datasetId);
+          } else if (orderedDatasets.filter((dataset) => !currentHidden.has(dataset.id)).length > 1) {
+            currentHidden.add(datasetId);
+          }
+          flatTimeState.progressionHiddenDatasetIds = Array.from(currentHidden);
+          renderFlatTime();
+        });
+      });
     }
 
     function buildSectionSavingsSummary(datasets, breakdownMap) {

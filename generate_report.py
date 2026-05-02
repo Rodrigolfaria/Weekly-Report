@@ -15,6 +15,7 @@ from report_builder import (
     build_dashboard_payload,
     build_empty_report_html,
     build_flat_time_csv_report_html,
+    build_flat_time_csvs_report_html,
     build_html,
     build_intervention_csv_report_html,
     build_report,

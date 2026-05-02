@@ -12,181 +12,169 @@ __REPORT_CSS__
   <script id="dashboard-data" type="application/json">__DATA_JSON__</script>
 
   <div class="page">
-    <section class="hero">
-      <div class="hero-grid">
-        <div>
-          <div class="eyebrow">Interactive Operational Dashboard</div>
-          <h1>Filter by day, week, rig, field, category, app, and more.</h1>
-          <p>The report is still generated from the spreadsheet automatically, but now the HTML behaves like a small dashboard. Once opened in the browser, it recalculates KPIs, charts, rankings, and tables instantly as you apply filters.</p>
-          <p><strong>Source file:</strong> __SOURCE_FILE__<br><strong>Generated at:</strong> __GENERATED_AT__</p>
+    <div class="app-sticky-shell">
+      <header class="app-shell-header">
+        <div class="app-brand">
+            <div class="eyebrow">Operational Analytics</div>
+            <h1>Operations Performance Hub</h1>
+            <div class="app-meta">
+              <span>__SOURCE_FILE__</span>
+              <span>__GENERATED_AT__</span>
+            </div>
+        </div>
+        <form class="dashboard-upload-form app-upload-form" method="post" action="/upload" enctype="multipart/form-data">
+          <label class="app-file-control" for="dashboard-upload">
+            <span class="app-file-label">Load file</span>
+            <span id="dashboard-upload-name" class="app-file-name">Choose XLSX workbook or CSV files</span>
+            <input id="dashboard-upload" class="file-input" type="file" name="spreadsheet" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" multiple required>
+          </label>
+          <button class="action-btn" type="submit">Load</button>
+        </form>
+      </header>
+
+      <section class="app-command-bar">
+        <div class="command-group command-group-view">
+          <span class="command-label">View</span>
+          <div class="view-tabs" role="tablist" aria-label="Report Views">
+            <button class="view-tab is-active" data-view="dashboard-view">Dashboard</button>
+            <button class="view-tab" data-view="flat-time-view">Flat Time</button>
+          </div>
         </div>
 
-        <div class="hero-side">
-          <h2>Quick Period</h2>
+        <div class="command-group">
+          <span class="command-label">Mode</span>
+          <div class="dashboard-mode-segmented" role="group" aria-label="Dashboard Mode">
+            <button class="dashboard-mode-btn is-active" type="button" data-dashboard-mode="interactive">Interactive</button>
+            <button class="dashboard-mode-btn" type="button" data-dashboard-mode="weekly">Weekly</button>
+            <select id="dashboard-mode" class="visually-hidden" aria-label="Dashboard Mode">
+              <option value="interactive">Interactive Dashboard</option>
+              <option value="weekly">Weekly Report</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="command-group command-group-period">
+          <span class="command-label">Period</span>
           <div class="preset-grid">
             <button class="preset-btn" data-preset="all">All time</button>
             <button class="preset-btn" data-preset="last7">Last 7 days</button>
             <button class="preset-btn" data-preset="last30">Last 30 days</button>
             <button class="preset-btn" data-preset="last90">Last 90 days</button>
           </div>
-          <p class="panel-note" style="color: rgba(255,255,255,0.8); margin-top: 14px;">The quick range buttons use the latest date found in the spreadsheet as the reference point, which makes them consistent even for historical datasets.</p>
-          <button id="reset-filters" class="ghost-btn" style="width: 100%;">Reset all filters</button>
-          <div class="theme-toggle-wrap">
-            <div class="theme-toggle-row">
-              <span class="theme-toggle-label">Theme</span>
-              <span id="theme-toggle-state" class="theme-toggle-state">Classic</span>
-            </div>
-            <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle dashboard theme">
+        </div>
+
+        <div class="command-group command-group-actions">
+          <span class="command-label">Actions</span>
+          <div class="command-actions">
+            <button id="reset-filters" class="ghost-btn" type="button">Reset filters</button>
+            <button id="theme-toggle" class="theme-toggle compact-theme-toggle" type="button" aria-label="Toggle dashboard theme">
               <span id="theme-toggle-thumb" class="theme-toggle-thumb">Classic</span>
+              <span id="theme-toggle-state" class="theme-toggle-state visually-hidden">Classic</span>
             </button>
           </div>
         </div>
-      </div>
-    </section>
-
-    <div class="view-tabs" role="tablist" aria-label="Report Views">
-      <button class="view-tab is-active" data-view="dashboard-view">Interactive Dashboard</button>
-      <button class="view-tab" data-view="flat-time-view">Flat Time</button>
+      </section>
     </div>
 
     <div id="dashboard-view" class="view-panel">
-      <div class="shell">
-      <aside class="sidebar">
-        <section class="panel">
-          <div class="panel-inner">
-            <details class="sidebar-panel">
-              <summary class="sidebar-panel-toggle">
-                <span>Filters</span>
-                <span class="sidebar-panel-chevron" aria-hidden="true">▾</span>
-              </summary>
-              <div class="sidebar-panel-body">
-              <p class="panel-note">Use the controls below to focus the report. All cards, charts, rankings, and detailed tables update together.</p>
-              <div class="filter-grid">
-              <div class="field">
-                <label for="start-date">Start Date</label>
-                <input id="start-date" type="date">
-              </div>
-              <div class="field">
-                <label for="end-date">End Date</label>
-                <input id="end-date" type="date">
-              </div>
-              <div class="field">
-                <label for="week-filter">Week</label>
-                <select id="week-filter"></select>
-              </div>
-              <div class="field">
-                <label for="month-filter">Month</label>
-                <select id="month-filter"></select>
-              </div>
-              <div class="field">
-                <label for="rig-filter">Rig</label>
-                <select id="rig-filter"></select>
-              </div>
-              <div class="field">
-                <label for="field-filter">Field</label>
-                <select id="field-filter"></select>
-              </div>
-              <div class="field">
-                <label for="well-filter">Well</label>
-                <select id="well-filter"></select>
-              </div>
-              <div class="field">
-                <label for="category-filter">Category</label>
-                <select id="category-filter"></select>
-              </div>
-              <div class="field">
-                <label for="type-filter">Type</label>
-                <select id="type-filter"></select>
-              </div>
-              <div class="field">
-                <label for="app-filter">Corva App</label>
-                <select id="app-filter"></select>
-              </div>
-              <div class="field">
-                <label for="validation-filter">Validation</label>
-                <select id="validation-filter">
-                  <option value="">All validations</option>
-                  <option value="validated">Validated only</option>
-                  <option value="not_validated">Not validated only</option>
-                </select>
-              </div>
-              <div class="field">
-                <label for="granularity-filter">Trend Granularity</label>
-                <select id="granularity-filter">
-                  <option value="day">Daily</option>
-                  <option value="week">Weekly</option>
-                  <option value="month">Monthly</option>
-                </select>
-              </div>
-              <div class="field">
-                <label for="search-filter">Search</label>
-                <input id="search-filter" type="search" placeholder="Rig, well, description, comment...">
-              </div>
-              </div>
-              </div>
-            </details>
-          </div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-inner">
-            <details class="sidebar-panel">
-              <summary class="sidebar-panel-toggle">
-                <span>What To Show</span>
-                <span class="sidebar-panel-chevron" aria-hidden="true">▾</span>
-              </summary>
-              <div class="sidebar-panel-body">
-              <p class="panel-note">You asked for control over what appears on screen, so each main block can be shown or hidden independently.</p>
-              <div class="toggle-grid">
-              <label class="toggle"><input type="checkbox" data-target="summary-section" checked> Summary</label>
-              <label class="toggle"><input type="checkbox" data-target="charts-section" checked> Charts</label>
-              <label class="toggle"><input type="checkbox" data-target="rankings-section" checked> Rankings</label>
-              <label class="toggle"><input type="checkbox" data-target="details-section"> Details</label>
-              <label class="toggle"><input type="checkbox" data-target="ca-section" checked> RTES Cost Avoidance</label>
-              <label class="toggle"><input type="checkbox" data-target="notes-section"> Notes</label>
-              </div>
-              </div>
-            </details>
-          </div>
-        </section>
-      </aside>
-
+      <div class="shell dashboard-shell-full">
       <main class="main">
-        <section class="panel section">
-          <div class="section-header">
-            <div>
-              <h2 class="section-title">Dashboard Controls</h2>
-              <p class="section-subtitle">Switch between interactive and weekly modes and load a new workbook or CSV directly from here.</p>
-            </div>
-          </div>
-          <div class="flat-time-toolbar dashboard-mode-toolbar">
-            <div style="display:flex; gap:16px; flex-wrap:wrap;">
-              <div class="field" style="min-width: 220px;">
-                <label for="dashboard-mode">Dashboard Mode</label>
-                <select id="dashboard-mode">
-                  <option value="interactive">Interactive Dashboard</option>
-                  <option value="weekly">Weekly Report</option>
-                </select>
+        <section class="dashboard-control-strip" aria-label="Dashboard controls">
+          <details class="control-drawer">
+            <summary class="control-drawer-toggle">
+              <span>Filters</span>
+              <span class="sidebar-panel-chevron" aria-hidden="true">▾</span>
+            </summary>
+            <div class="control-drawer-body">
+              <p class="panel-note">Focus the current analysis.</p>
+              <div class="filter-grid">
+                <div class="field">
+                  <label for="start-date">Start Date</label>
+                  <input id="start-date" type="date">
+                </div>
+                <div class="field">
+                  <label for="end-date">End Date</label>
+                  <input id="end-date" type="date">
+                </div>
+                <div class="field">
+                  <label for="week-filter">Week</label>
+                  <select id="week-filter"></select>
+                </div>
+                <div class="field">
+                  <label for="month-filter">Month</label>
+                  <select id="month-filter"></select>
+                </div>
+                <div class="field">
+                  <label for="rig-filter">Rig</label>
+                  <select id="rig-filter"></select>
+                </div>
+                <div class="field">
+                  <label for="field-filter">Field</label>
+                  <select id="field-filter"></select>
+                </div>
+                <div class="field">
+                  <label for="well-filter">Well</label>
+                  <select id="well-filter"></select>
+                </div>
+                <div class="field">
+                  <label for="category-filter">Category</label>
+                  <select id="category-filter"></select>
+                </div>
+                <div class="field">
+                  <label for="type-filter">Type</label>
+                  <select id="type-filter"></select>
+                </div>
+                <div class="field">
+                  <label for="app-filter">Corva App</label>
+                  <select id="app-filter"></select>
+                </div>
+                <div class="field">
+                  <label for="validation-filter">Validation</label>
+                  <select id="validation-filter">
+                    <option value="">All validations</option>
+                    <option value="validated">Validated only</option>
+                    <option value="not_validated">Not validated only</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="granularity-filter">Trend Granularity</label>
+                  <select id="granularity-filter">
+                    <option value="day">Daily</option>
+                    <option value="week">Weekly</option>
+                    <option value="month">Monthly</option>
+                  </select>
+                </div>
+                <div class="field field-wide">
+                  <label for="search-filter">Search</label>
+                  <input id="search-filter" type="search" placeholder="Rig, well, description, comment...">
+                </div>
               </div>
             </div>
-            <form class="dashboard-upload-form dashboard-upload-form-inline" method="post" action="/upload" enctype="multipart/form-data">
-              <div class="field" style="min-width: 320px;">
-                <label for="dashboard-upload">Load File</label>
-                <input id="dashboard-upload" class="file-input" type="file" name="spreadsheet" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" required>
-              </div>
-              <button class="action-btn" type="submit">Load</button>
-            </form>
-          </div>
-          <div class="chips" style="margin-top: 14px;">
-            <span class="chip">Supports <code>.xlsx</code>, <code>Intervention Log .csv</code>, and <code>Flat Time .csv</code>.</span>
-          </div>
-        </section>
+          </details>
 
+          <details class="control-drawer">
+            <summary class="control-drawer-toggle">
+              <span>Display Options</span>
+              <span class="sidebar-panel-chevron" aria-hidden="true">▾</span>
+            </summary>
+            <div class="control-drawer-body">
+              <p class="panel-note">Choose visible dashboard blocks.</p>
+              <div class="toggle-grid">
+                <label class="toggle"><input type="checkbox" data-target="summary-section" checked> Summary</label>
+                <label class="toggle"><input type="checkbox" data-target="charts-section" checked> Charts</label>
+                <label class="toggle"><input type="checkbox" data-target="rankings-section" checked> Rankings</label>
+                <label class="toggle"><input type="checkbox" data-target="details-section"> Details</label>
+                <label class="toggle"><input type="checkbox" data-target="ca-section" checked> RTES Cost Avoidance</label>
+                <label class="toggle"><input type="checkbox" data-target="notes-section"> Notes</label>
+              </div>
+            </div>
+          </details>
+        </section>
         <section id="summary-section" class="panel section">
           <div class="section-header">
             <div>
               <h2 class="section-title">Filtered Executive Summary</h2>
-              <p class="section-subtitle">The KPI cards below reflect only the records that match the current filter set. This makes the same HTML useful for daily drill-downs, weekly summaries, and focused rig reviews.</p>
+              <p class="section-subtitle">KPIs for the current filter set.</p>
             </div>
             <div class="status-box">
               <strong id="results-title">Current result set</strong>
@@ -201,7 +189,7 @@ __REPORT_CSS__
           <div class="section-header">
             <div>
               <h2 class="section-title">Interactive Charts</h2>
-              <p class="section-subtitle">Trend and ranking charts update immediately with every filter change. Use the trend granularity control on the left to switch between daily, weekly, and monthly views.</p>
+              <p class="section-subtitle">Trend and ranking charts for the selected slice.</p>
             </div>
           </div>
           <div class="two-col">
@@ -512,11 +500,11 @@ __REPORT_CSS__
                 </select>
               </div>
             </div>
-            <div class="flat-time-upload-panel">
-              <div class="field" style="min-width: 320px;">
-                <label for="flat-time-upload">Add More CSV Files</label>
+            <div class="flat-time-toolbar-actions">
+              <label class="action-btn flat-time-add-csvs" for="flat-time-upload">
+                Add CSVs
                 <input id="flat-time-upload" class="file-input" type="file" accept=".csv,text/csv" multiple>
-              </div>
+              </label>
               <button id="flat-time-recalculate" class="action-btn" type="button">Recalculate</button>
               <button id="flat-time-clear-uploads" class="action-btn" type="button">Clear All CSVs</button>
             </div>
